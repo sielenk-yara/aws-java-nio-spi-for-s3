@@ -21,7 +21,6 @@ import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.WatchService;
 import java.nio.file.attribute.UserPrincipalLookupService;
-import java.nio.file.spi.FileSystemProvider;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Objects;
@@ -67,17 +66,6 @@ public class S3FileSystem extends FileSystem {
         configuration = (config == null) ? new S3NioSpiConfiguration() : config;
         bucketName = configuration.getBucketName();
 
-        // This is quite questionable and may be removed in future versions:
-        provider.setConfiguration(config);
-        // The configuration field in {@code S3FileSystemProvider} is used for certain tasks
-        // that are implemented there.
-        // But those tasks are in service of {@code S3FileSystem} instances.
-        // So if there are multiple ones with different configurations, the provider will use
-        // the one that has been set by the last created filesystem, overriding potentially
-        // different values in older {@code S3FileSystem} instances.
-        //
-        // See https://github.com/awslabs/aws-java-nio-spi-for-s3/issues/597
-
         logger.debug("creating FileSystem for '{}://{}'", provider.getScheme(), bucketName);
 
         clientProvider = new S3ClientProvider(configuration);
@@ -90,7 +78,7 @@ public class S3FileSystem extends FileSystem {
      * @return The provider that created this file system.
      */
     @Override
-    public FileSystemProvider provider() {
+    public S3FileSystemProvider provider() {
         return provider;
     }
 
@@ -265,7 +253,7 @@ public class S3FileSystem extends FileSystem {
      */
     @SuppressWarnings("NullableProblems")
     @Override
-    public Path getPath(String first, String... more) {
+    public S3Path getPath(String first, String... more) {
         return S3Path.getPath(this, first, more);
     }
 

@@ -45,7 +45,6 @@ public class S3NioSpiConfigurationTest {
 
     @Test
     public void constructors() {
-        then(config).isInstanceOf(Map.class);
         then(config.getMaxFragmentNumber()).isEqualTo(S3_SPI_READ_MAX_FRAGMENT_NUMBER_DEFAULT);
         then(config.getMaxFragmentSize()).isEqualTo(S3_SPI_READ_MAX_FRAGMENT_SIZE_DEFAULT);
         then(config.getEndpointProtocol()).isEqualTo("https");
@@ -234,12 +233,11 @@ public class S3NioSpiConfigurationTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Bucket name should not contain uppercase characters");
     }
-    
+
     @Test
     public void withAndGetForcePathStyle() {
-        then(config).contains(entry(S3_SPI_FORCE_PATH_STYLE_PROPERTY, "false"));
+        then(config.getForcePathStyle()).isFalse();
         then(config.withForcePathStyle(true)).isSameAs(config);
-        then(config).contains(entry(S3_SPI_FORCE_PATH_STYLE_PROPERTY, "true"));
         then(config.getForcePathStyle()).isTrue();
         then(config.withForcePathStyle(false).getForcePathStyle()).isFalse();
 
@@ -250,34 +248,29 @@ public class S3NioSpiConfigurationTest {
         map.remove(S3_SPI_FORCE_PATH_STYLE_PROPERTY); // same S3NioSpiConfiguration on purpose
         then(config.getForcePathStyle()).isTrue();
         then(config.withForcePathStyle(null).getForcePathStyle()).isFalse();
-        then(config).doesNotContainKey(S3_SPI_FORCE_PATH_STYLE_PROPERTY);
     }
 
     @Test
     public void withAndGetTimeoutLow() {
-        then(config).contains(entry(S3_SPI_TIMEOUT_LOW_PROPERTY, "1"));
+        then(config.getTimeoutLow()).isEqualTo(1L);
         then(config.withTimeoutLow(4L)).isSameAs(config);
-        then(config).contains(entry(S3_SPI_TIMEOUT_LOW_PROPERTY, "4"));
         then(config.getTimeoutLow()).isEqualTo(4L);
         then(config.withTimeoutLow(5L).getTimeoutLow()).isEqualTo(5L);
     }
 
     @Test
     public void withAndGetTimeoutMedium() {
-        then(config).contains(entry(S3_SPI_TIMEOUT_MEDIUM_PROPERTY, "3"));
+        then(config.getTimeoutMedium()).isEqualTo(3L);
         then(config.withTimeoutMedium(5L)).isSameAs(config);
-        then(config).contains(entry(S3_SPI_TIMEOUT_MEDIUM_PROPERTY, "5"));
         then(config.getTimeoutMedium()).isEqualTo(5L);
         then(config.withTimeoutMedium(6L).getTimeoutMedium()).isEqualTo(6L);
     }
 
     @Test
     public void withAndGetTimeoutHigh() {
-        then(config).contains(entry(S3_SPI_TIMEOUT_HIGH_PROPERTY, "5"));
+        then(config.getTimeoutHigh()).isEqualTo(5L);
         then(config.withTimeoutHigh(7L)).isSameAs(config);
-        then(config).contains(entry(S3_SPI_TIMEOUT_HIGH_PROPERTY, "7"));
         then(config.getTimeoutHigh()).isEqualTo(7L);
         then(config.withTimeoutHigh(8L).getTimeoutHigh()).isEqualTo(8L);
     }
-
 }

@@ -24,7 +24,7 @@ import software.amazon.nio.spi.s3.util.TimeOutUtils;
 /**
  * Object to hold configuration of the S3 NIO SPI
  */
-public class S3NioSpiConfiguration extends HashMap<String, Object> {
+public class S3NioSpiConfiguration {
 
     public static final String AWS_REGION_PROPERTY = "aws.region";
     public static final String AWS_ACCESS_KEY_PROPERTY = "aws.accessKey";
@@ -105,6 +105,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
 
     private String bucketName;
 
+    private final Map<String, Object> map;
 
     /**
      * Create a new, empty configuration
@@ -121,16 +122,18 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
     public S3NioSpiConfiguration(Map<String, ?> overrides) {
         Objects.requireNonNull(overrides);
 
+        map = new HashMap<>();
+
         //
         // setup defaults
         //
-        put(S3_SPI_READ_MAX_FRAGMENT_NUMBER_PROPERTY, String.valueOf(S3_SPI_READ_MAX_FRAGMENT_NUMBER_DEFAULT));
-        put(S3_SPI_READ_MAX_FRAGMENT_SIZE_PROPERTY, String.valueOf(S3_SPI_READ_MAX_FRAGMENT_SIZE_DEFAULT));
-        put(S3_SPI_ENDPOINT_PROTOCOL_PROPERTY, S3_SPI_ENDPOINT_PROTOCOL_DEFAULT);
-        put(S3_SPI_FORCE_PATH_STYLE_PROPERTY, String.valueOf(S3_SPI_FORCE_PATH_STYLE_DEFAULT));
-        put(S3_SPI_TIMEOUT_LOW_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_LOW_DEFAULT));
-        put(S3_SPI_TIMEOUT_MEDIUM_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_MEDIUM_DEFAULT));
-        put(S3_SPI_TIMEOUT_HIGH_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_HIGH_DEFAULT));
+        map.put(S3_SPI_READ_MAX_FRAGMENT_NUMBER_PROPERTY, String.valueOf(S3_SPI_READ_MAX_FRAGMENT_NUMBER_DEFAULT));
+        map.put(S3_SPI_READ_MAX_FRAGMENT_SIZE_PROPERTY, String.valueOf(S3_SPI_READ_MAX_FRAGMENT_SIZE_DEFAULT));
+        map.put(S3_SPI_ENDPOINT_PROTOCOL_PROPERTY, S3_SPI_ENDPOINT_PROTOCOL_DEFAULT);
+        map.put(S3_SPI_FORCE_PATH_STYLE_PROPERTY, String.valueOf(S3_SPI_FORCE_PATH_STYLE_DEFAULT));
+        map.put(S3_SPI_TIMEOUT_LOW_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_LOW_DEFAULT));
+        map.put(S3_SPI_TIMEOUT_MEDIUM_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_MEDIUM_DEFAULT));
+        map.put(S3_SPI_TIMEOUT_HIGH_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_HIGH_DEFAULT));
 
         //
         // With the below we pick existing environment variables and system
@@ -141,17 +144,17 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
         //
 
         //add env var overrides if present
-        keySet().stream()
+        map.keySet().stream()
             .map(key -> Pair.of(key,
                 Optional.ofNullable(System.getenv().get(this.convertPropertyNameToEnvVar(key)))))
-            .forEach(pair -> pair.right().ifPresent(val -> put(pair.left(), val)));
+            .forEach(pair -> pair.right().ifPresent(val -> map.put(pair.left(), val)));
 
         //add System props as overrides if present
-        keySet().forEach(
-            key -> Optional.ofNullable(System.getProperty(key)).ifPresent(val -> put(key, val))
+        map.keySet().forEach(
+            key -> Optional.ofNullable(System.getProperty(key)).ifPresent(val -> map.put(key, val))
         );
 
-        overrides.keySet().forEach(key -> put(key, overrides.get(key)));
+        overrides.keySet().forEach(key -> map.put(key, overrides.get(key)));
     }
 
     /**
@@ -161,8 +164,11 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      */
     protected S3NioSpiConfiguration(Properties overrides) {
         Objects.requireNonNull(overrides);
+
+        map = new HashMap<>();
+
         overrides.stringPropertyNames()
-            .forEach(key -> put(key, overrides.getProperty(key)));
+            .forEach(key -> map.put(key, overrides.getProperty(key)));
     }
 
     /**
@@ -175,7 +181,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
         if (maxFragmentNumber < 1) {
             throw new IllegalArgumentException("maxFragmentNumber must be positive");
         }
-        put(S3_SPI_READ_MAX_FRAGMENT_NUMBER_PROPERTY, String.valueOf(maxFragmentNumber));
+        map.put(S3_SPI_READ_MAX_FRAGMENT_NUMBER_PROPERTY, String.valueOf(maxFragmentNumber));
         return this;
     }
 
@@ -189,7 +195,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
         if (maxFragmentSize < 1) {
             throw new IllegalArgumentException("maxFragmentSize must be positive");
         }
-        put(S3_SPI_READ_MAX_FRAGMENT_SIZE_PROPERTY, String.valueOf(maxFragmentSize));
+        map.put(S3_SPI_READ_MAX_FRAGMENT_SIZE_PROPERTY, String.valueOf(maxFragmentSize));
         return this;
     }
 
@@ -212,7 +218,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
             );
         }
 
-        put(S3_SPI_ENDPOINT_PROPERTY, endpoint);
+        map.put(S3_SPI_ENDPOINT_PROPERTY, endpoint);
         return this;
     }
 
@@ -229,7 +235,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
         if (!"http".equals(protocol) && !"https".equals(protocol)) {
             throw new IllegalArgumentException("endpoint prococol must be one of ('http', 'https')");
         }
-        put(S3_SPI_ENDPOINT_PROTOCOL_PROPERTY, protocol);
+        map.put(S3_SPI_ENDPOINT_PROTOCOL_PROPERTY, protocol);
         return this;
     }
 
@@ -241,9 +247,9 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      */
     public S3NioSpiConfiguration withRegion(String region) {
         if ((region == null) || region.isBlank()) {
-            remove(AWS_REGION_PROPERTY);
+            map.remove(AWS_REGION_PROPERTY);
         } else {
-            put(AWS_REGION_PROPERTY, region.trim());
+            map.put(AWS_REGION_PROPERTY, region.trim());
         }
 
         return this;
@@ -275,14 +281,14 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
     public S3NioSpiConfiguration withCredentials(String accessKey, String secretAccessKey) {
         AwsCredentials credentials = null;
         if (accessKey == null) {
-            remove(AWS_ACCESS_KEY_PROPERTY);
-            remove(AWS_SECRET_ACCESS_KEY_PROPERTY);
+            map.remove(AWS_ACCESS_KEY_PROPERTY);
+            map.remove(AWS_SECRET_ACCESS_KEY_PROPERTY);
         } else {
             if (secretAccessKey == null) {
                 throw new IllegalArgumentException("secretAccessKey can not be null");
             }
-            put(AWS_ACCESS_KEY_PROPERTY, accessKey);
-            put(AWS_SECRET_ACCESS_KEY_PROPERTY, secretAccessKey);
+            map.put(AWS_ACCESS_KEY_PROPERTY, accessKey);
+            map.put(AWS_SECRET_ACCESS_KEY_PROPERTY, secretAccessKey);
             credentials = AwsBasicCredentials.create(accessKey, secretAccessKey);
         }
         withCredentials(credentials);
@@ -299,9 +305,9 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      */
     public S3NioSpiConfiguration withCredentials(AwsCredentials credentials) {
         if (credentials == null) {
-            remove(S3_SPI_CREDENTIALS_PROPERTY);
+            map.remove(S3_SPI_CREDENTIALS_PROPERTY);
         } else {
-            put(S3_SPI_CREDENTIALS_PROPERTY, credentials);
+            map.put(S3_SPI_CREDENTIALS_PROPERTY, credentials);
         }
         return this;
     }
@@ -317,9 +323,9 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      */
     public S3NioSpiConfiguration withForcePathStyle(Boolean forcePathStyle) {
         if (forcePathStyle == null) {
-            remove(S3_SPI_FORCE_PATH_STYLE_PROPERTY);
+            map.remove(S3_SPI_FORCE_PATH_STYLE_PROPERTY);
         } else {
-            put(S3_SPI_FORCE_PATH_STYLE_PROPERTY, String.valueOf(forcePathStyle));
+            map.put(S3_SPI_FORCE_PATH_STYLE_PROPERTY, String.valueOf(forcePathStyle));
         }
 
         return this;
@@ -336,9 +342,9 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      */
     public S3NioSpiConfiguration withTimeoutLow(Long timeoutLow) {
         if (timeoutLow == null) {
-            put(S3_SPI_TIMEOUT_LOW_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_LOW_DEFAULT));
+            map.put(S3_SPI_TIMEOUT_LOW_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_LOW_DEFAULT));
         } else {
-            put(S3_SPI_TIMEOUT_LOW_PROPERTY, String.valueOf(timeoutLow));
+            map.put(S3_SPI_TIMEOUT_LOW_PROPERTY, String.valueOf(timeoutLow));
         }
 
         return this;
@@ -355,9 +361,9 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      */
     public S3NioSpiConfiguration withTimeoutMedium(Long timeoutMedium) {
         if (timeoutMedium == null) {
-            put(S3_SPI_TIMEOUT_MEDIUM_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_MEDIUM_DEFAULT));
+            map.put(S3_SPI_TIMEOUT_MEDIUM_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_MEDIUM_DEFAULT));
         } else {
-            put(S3_SPI_TIMEOUT_MEDIUM_PROPERTY, String.valueOf(timeoutMedium));
+            map.put(S3_SPI_TIMEOUT_MEDIUM_PROPERTY, String.valueOf(timeoutMedium));
         }
 
         return this;
@@ -374,9 +380,9 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      */
     public S3NioSpiConfiguration withTimeoutHigh(Long timeoutHigh) {
         if (timeoutHigh == null) {
-            put(S3_SPI_TIMEOUT_HIGH_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_HIGH_DEFAULT));
+            map.put(S3_SPI_TIMEOUT_HIGH_PROPERTY, String.valueOf(S3_SPI_TIMEOUT_HIGH_DEFAULT));
         } else {
-            put(S3_SPI_TIMEOUT_HIGH_PROPERTY, String.valueOf(timeoutHigh));
+            map.put(S3_SPI_TIMEOUT_HIGH_PROPERTY, String.valueOf(timeoutHigh));
         }
 
         return this;
@@ -413,7 +419,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      * @return the configured value or the default ("") if not overridden
      */
     public String getEndpoint() {
-        return (String) getOrDefault(S3_SPI_ENDPOINT_PROPERTY, S3_SPI_ENDPOINT_DEFAULT);
+        return (String) map.getOrDefault(S3_SPI_ENDPOINT_PROPERTY, S3_SPI_ENDPOINT_DEFAULT);
     }
 
     /**
@@ -422,7 +428,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      * @return the configured value or the default if not overridden
      */
     public String getEndpointProtocol() {
-        var protocol = (String) getOrDefault(S3_SPI_ENDPOINT_PROTOCOL_PROPERTY, S3_SPI_ENDPOINT_PROTOCOL_DEFAULT);
+        var protocol = (String) map.getOrDefault(S3_SPI_ENDPOINT_PROTOCOL_PROPERTY, S3_SPI_ENDPOINT_PROTOCOL_DEFAULT);
         if ("http".equalsIgnoreCase(protocol) || "https".equalsIgnoreCase(protocol)) {
             return protocol;
         }
@@ -445,13 +451,13 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      * @return the configured value or null if not provided
      */
     public AwsCredentials getCredentials() {
-        if (containsKey(S3_SPI_CREDENTIALS_PROPERTY)) {
-            return (AwsCredentials) get(S3_SPI_CREDENTIALS_PROPERTY);
+        if (map.containsKey(S3_SPI_CREDENTIALS_PROPERTY)) {
+            return (AwsCredentials) map.get(S3_SPI_CREDENTIALS_PROPERTY);
         }
-        if (containsKey(AWS_ACCESS_KEY_PROPERTY)) {
+        if (map.containsKey(AWS_ACCESS_KEY_PROPERTY)) {
             return AwsBasicCredentials.create(
-                (String) get(AWS_ACCESS_KEY_PROPERTY),
-                (String) get(AWS_SECRET_ACCESS_KEY_PROPERTY)
+                (String) map.get(AWS_ACCESS_KEY_PROPERTY),
+                (String) map.get(AWS_SECRET_ACCESS_KEY_PROPERTY)
             );
         }
 
@@ -464,7 +470,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      * @return the configured value or null if not provided
      */
     public String getRegion() {
-        return (String) get(AWS_REGION_PROPERTY);
+        return (String) map.get(AWS_REGION_PROPERTY);
     }
 
     /**
@@ -477,7 +483,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
     }
 
     public boolean getForcePathStyle() {
-        return Boolean.parseBoolean((String) getOrDefault(S3_SPI_FORCE_PATH_STYLE_PROPERTY, 
+        return Boolean.parseBoolean((String) map.getOrDefault(S3_SPI_FORCE_PATH_STYLE_PROPERTY,
                                                           String.valueOf(S3_SPI_FORCE_PATH_STYLE_DEFAULT)));
     }
 
@@ -487,7 +493,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      * @return the configured value or the default if not overridden
      */
     public Long getTimeoutLow() {
-        return Long.parseLong((String) getOrDefault(S3_SPI_TIMEOUT_LOW_PROPERTY,
+        return Long.parseLong((String) map.getOrDefault(S3_SPI_TIMEOUT_LOW_PROPERTY,
                                                             String.valueOf(S3_SPI_TIMEOUT_LOW_DEFAULT)));
     }
 
@@ -497,7 +503,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      * @return the configured value or the default if not overridden
      */
     public Long getTimeoutMedium() {
-        return Long.parseLong((String) getOrDefault(S3_SPI_TIMEOUT_MEDIUM_PROPERTY,
+        return Long.parseLong((String) map.getOrDefault(S3_SPI_TIMEOUT_MEDIUM_PROPERTY,
                                                             String.valueOf(S3_SPI_TIMEOUT_MEDIUM_DEFAULT)));
     }
 
@@ -507,7 +513,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
      * @return the configured value or the default if not overridden
      */
     public Long getTimeoutHigh() {
-        return Long.parseLong((String) getOrDefault(S3_SPI_TIMEOUT_HIGH_PROPERTY,
+        return Long.parseLong((String) map.getOrDefault(S3_SPI_TIMEOUT_HIGH_PROPERTY,
                                                             String.valueOf(S3_SPI_TIMEOUT_HIGH_DEFAULT)));
     }
 
@@ -529,7 +535,7 @@ public class S3NioSpiConfiguration extends HashMap<String, Object> {
     }
 
     private int parseIntProperty(String propName, int defaultVal) {
-        var propertyVal = (String) get(propName);
+        var propertyVal = (String) map.get(propName);
         try {
             return Integer.parseInt(propertyVal);
         } catch (NumberFormatException e) {

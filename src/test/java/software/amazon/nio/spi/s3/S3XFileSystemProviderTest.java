@@ -70,7 +70,7 @@ public class S3XFileSystemProviderTest {
         restoreSystemProperties(() -> {
             System.setProperty("aws.region", "us-west-1");
 
-            var fs = (S3FileSystem) p.getFileSystem(URI.create("s3x://urikey:urisecret@some.where.com:1010/bucket"));
+            var fs = p.getFileSystem(URI.create("s3x://urikey:urisecret@some.where.com:1010/bucket"));
             fs.clientProvider().asyncClientBuilder(BUILDER);
             fs.client();
             fs.close();

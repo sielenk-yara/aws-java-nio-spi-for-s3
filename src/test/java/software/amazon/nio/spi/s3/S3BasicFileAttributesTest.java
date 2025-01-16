@@ -50,7 +50,7 @@ public class S3BasicFileAttributesTest {
         @BeforeAll
         void configureDirectory() throws IOException {
             S3FileSystem fs = mock();
-            FileSystemProvider provider = mock();
+            S3FileSystemProvider provider = mock();
             when(fs.provider()).thenReturn(provider);
             when(fs.getConfiguration()).thenReturn(new S3NioSpiConfiguration());
             when(provider.getScheme()).thenReturn("s3");
@@ -126,7 +126,7 @@ public class S3BasicFileAttributesTest {
         void configureRegularFile() throws IOException {
             S3FileSystem fs = mock();
 
-            FileSystemProvider provider = mock();
+            S3FileSystemProvider provider = mock();
             when(fs.provider()).thenReturn(provider);
             when(provider.getScheme()).thenReturn("s3");
 
@@ -212,7 +212,7 @@ public class S3BasicFileAttributesTest {
     @Test
     @DisplayName("When a timeout happens getting attributes of a regular file, a RuntimeException should be thrown")
     void sizeOfFileThrowsWhenTimeout(){
-        FileSystemProvider provider = mock();
+        S3FileSystemProvider provider = mock();
         when(provider.getScheme()).thenReturn("s3");
 
         S3FileSystem fs = mock();

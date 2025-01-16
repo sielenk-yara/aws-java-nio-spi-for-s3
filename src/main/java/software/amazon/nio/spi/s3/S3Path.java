@@ -28,7 +28,7 @@ import java.util.Objects;
 import software.amazon.nio.spi.s3.config.S3NioSpiConfiguration;
 
 @SuppressWarnings("NullableProblems")
-class S3Path implements Path {
+public class S3Path implements Path {
 
     private final S3FileSystem fileSystem;
     private final PosixLikePathRepresentation pathRepresentation;

@@ -41,7 +41,7 @@ public class S3FileSystemTest {
     @BeforeEach
     public void init() {
         provider = new S3FileSystemProvider();
-        s3FileSystem = (S3FileSystem) provider.getFileSystem(s3Uri);
+        s3FileSystem = provider.getFileSystem(s3Uri);
         s3FileSystem.clientProvider = new FixedS3ClientProvider(mockClient);
         lenient().when(mockClient.headObject(anyConsumer())).thenReturn(
                 CompletableFuture.supplyAsync(() -> HeadObjectResponse.builder().contentLength(100L).build()));

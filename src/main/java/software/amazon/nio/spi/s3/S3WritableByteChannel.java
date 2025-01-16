@@ -44,7 +44,7 @@ class S3WritableByteChannel implements WritableByteChannel {
         this.path = path;
 
         try {
-            var fileSystemProvider = (S3FileSystemProvider) path.getFileSystem().provider();
+            var fileSystemProvider = path.getFileSystem().provider();
             var exists = fileSystemProvider.exists(client, path);
 
             if (exists && options.contains(StandardOpenOption.CREATE_NEW)) {

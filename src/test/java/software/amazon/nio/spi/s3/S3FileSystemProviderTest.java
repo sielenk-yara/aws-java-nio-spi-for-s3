@@ -33,6 +33,7 @@ import java.nio.file.AccessMode;
 import java.nio.file.DirectoryStream;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystemNotFoundException;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
@@ -90,7 +91,7 @@ public class S3FileSystemProviderTest {
         provider = new S3FileSystemProvider();
         lenient().when(mockClient.headObject(anyConsumer())).thenReturn(
                 CompletableFuture.supplyAsync(() -> HeadObjectResponse.builder().contentLength(100L).build()));
-        fs = (S3FileSystem) provider.getFileSystem(URI.create(pathUri));
+        fs = provider.getFileSystem(URI.create(pathUri));
         fs.clientProvider(new FixedS3ClientProvider(mockClient));
     }
 
@@ -109,7 +110,7 @@ public class S3FileSystemProviderTest {
     public void newFileSystemPath() {
         assertThatThrownBy(
             () -> new S3FileSystemProvider().newFileSystem(Paths.get(pathUri), Collections.emptyMap())
-        ).isInstanceOf(UnsupportedOperationException.class);
+        ).isInstanceOf(InvalidPathException.class);
     }
 
     @Test
@@ -514,8 +515,8 @@ public class S3FileSystemProviderTest {
         var foo = fs.getPath("/foo");
         assertThrows(UnsupportedOperationException.class, () -> provider.setAttribute(foo, "x", "y"));
     }
-    
-        
+
+
     @Test
     public void defaultForcePathStyle() throws Exception {
         // GIVEN
