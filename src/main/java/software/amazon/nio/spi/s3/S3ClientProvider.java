@@ -16,7 +16,7 @@ import software.amazon.nio.spi.s3.config.S3NioSpiConfiguration;
 /**
  * Creates async S3 clients used by this library.
  */
-public class S3ClientProvider {
+class S3ClientProvider {
 
     /**
      * Default asynchronous client using the "<a href="https://s3.us-east-1.amazonaws.com">...</a>" endpoint
@@ -42,7 +42,7 @@ public class S3ClientProvider {
             .expireAfterWrite(Duration.ofHours(1))
             .build();
 
-    public S3ClientProvider(S3NioSpiConfiguration c) {
+    S3ClientProvider(S3NioSpiConfiguration c) {
         this.configuration = (c == null) ? new S3NioSpiConfiguration() : c;
     }
 

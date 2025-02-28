@@ -26,7 +26,7 @@ class S3DirectoryStream implements DirectoryStream<Path> {
     private final Logger logger = LoggerFactory.getLogger(this.getClass().getName());
     private final Iterator<Path> iterator;
 
-    S3DirectoryStream(S3FileSystem fs, String bucketName, String finalDirName, Filter<? super Path> filter) {
+    S3DirectoryStream(S3FileSystemImpl fs, String bucketName, String finalDirName, Filter<? super Path> filter) {
         final var listObjectsV2Publisher = fs.client().listObjectsV2Paginator(req -> req
             .bucket(bucketName)
             .prefix(finalDirName)
@@ -77,7 +77,7 @@ class S3DirectoryStream implements DirectoryStream<Path> {
 
 
     private static boolean isEqualToParent(String finalDirName, Path p) {
-        return ((S3Path) p).getKey().equals(finalDirName);
+        return ((S3PathImpl) p).getKey().equals(finalDirName);
     }
 
     private boolean tryAccept(DirectoryStream.Filter<? super Path> filter, Path path) {

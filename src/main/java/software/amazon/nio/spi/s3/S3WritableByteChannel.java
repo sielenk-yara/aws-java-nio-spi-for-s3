@@ -25,7 +25,7 @@ import org.checkerframework.checker.nullness.qual.NonNull;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 
 class S3WritableByteChannel implements WritableByteChannel {
-    private final S3Path path;
+    private final S3PathImpl path;
     private final Path tempFile;
     private final SeekableByteChannel channel;
     private final S3TransferUtil s3TransferUtil;
@@ -33,7 +33,7 @@ class S3WritableByteChannel implements WritableByteChannel {
     private boolean open;
 
     S3WritableByteChannel(
-        S3Path path,
+        S3PathImpl path,
         S3AsyncClient client,
         S3TransferUtil s3TransferUtil,
         Set<? extends OpenOption> options
@@ -44,7 +44,7 @@ class S3WritableByteChannel implements WritableByteChannel {
         this.path = path;
 
         try {
-            var fileSystemProvider = (S3FileSystemProvider) path.getFileSystem().provider();
+            var fileSystemProvider = path.getFileSystem().provider();
             var exists = fileSystemProvider.exists(client, path);
 
             if (exists && options.contains(StandardOpenOption.CREATE_NEW)) {

@@ -28,18 +28,18 @@ class S3SeekableByteChannel implements SeekableByteChannel {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3SeekableByteChannel.class);
 
     private long position;
-    private final S3Path path;
+    private final S3PathImpl path;
     private final ReadableByteChannel readDelegate;
     private final S3WritableByteChannel writeDelegate;
 
     private boolean closed;
     private long size = -1L;
 
-    S3SeekableByteChannel(S3Path s3Path, S3AsyncClient s3Client, Set<? extends OpenOption> options) throws IOException {
+    S3SeekableByteChannel(S3PathImpl s3Path, S3AsyncClient s3Client, Set<? extends OpenOption> options) throws IOException {
         this(s3Path, s3Client, 0L, options, null, null);
     }
 
-    private S3SeekableByteChannel(S3Path s3Path, S3AsyncClient s3Client, long startAt, Set<? extends OpenOption> options,
+    private S3SeekableByteChannel(S3PathImpl s3Path, S3AsyncClient s3Client, long startAt, Set<? extends OpenOption> options,
                                   Long timeout, TimeUnit timeUnit) throws IOException {
         position = startAt;
         path = s3Path;

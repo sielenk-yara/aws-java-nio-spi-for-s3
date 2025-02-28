@@ -31,17 +31,17 @@ import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 
 @ExtendWith(MockitoExtension.class)
 public class S3FileSystemTest {
-    S3FileSystemProvider provider;
+    S3FileSystemProviderImpl provider;
     URI s3Uri = URI.create("s3://mybucket/some/path/to/object.txt");
-    S3FileSystem s3FileSystem;
+    S3FileSystemImpl s3FileSystem;
 
     @Mock
     S3AsyncClient mockClient; //client used to determine bucket location
 
     @BeforeEach
     public void init() {
-        provider = new S3FileSystemProvider();
-        s3FileSystem = (S3FileSystem) provider.getFileSystem(s3Uri);
+        provider = new S3FileSystemProviderImpl();
+        s3FileSystem = provider.getFileSystem(s3Uri);
         s3FileSystem.clientProvider = new FixedS3ClientProvider(mockClient);
         lenient().when(mockClient.headObject(anyConsumer())).thenReturn(
                 CompletableFuture.supplyAsync(() -> HeadObjectResponse.builder().contentLength(100L).build()));
@@ -115,7 +115,7 @@ public class S3FileSystemTest {
     @Test
     public void getPath() {
         //additional path construction tests are in S3PathTest
-        assertEquals(s3FileSystem.getPath("/"), S3Path.getPath(s3FileSystem, PATH_SEPARATOR));
+        assertEquals(s3FileSystem.getPath("/"), S3PathImpl.getPath(s3FileSystem, PATH_SEPARATOR));
     }
 
     @Test

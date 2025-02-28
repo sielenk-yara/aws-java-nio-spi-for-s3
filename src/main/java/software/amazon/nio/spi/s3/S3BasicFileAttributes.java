@@ -211,7 +211,7 @@ class S3BasicFileAttributes implements BasicFileAttributes {
      * @return path BasicFileAttributes
      * @throws IOException Errors getting the metadata of the object represented by the path are wrapped in IOException
      */
-    static S3BasicFileAttributes get(S3Path path, Duration readTimeout) throws IOException {
+    static S3BasicFileAttributes get(S3PathImpl path, Duration readTimeout) throws IOException {
         if (path.isDirectory()) {
             return DIRECTORY_ATTRIBUTES;
         }
@@ -227,7 +227,7 @@ class S3BasicFileAttributes implements BasicFileAttributes {
     }
 
     private static HeadObjectResponse getObjectMetadata(
-        S3Path path,
+        S3PathImpl path,
         Duration timeout
     ) throws IOException {
         var client = path.getFileSystem().client();

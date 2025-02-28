@@ -38,7 +38,7 @@ class S3ReadAheadByteChannel implements ReadableByteChannel {
 
     private static final Logger logger = LoggerFactory.getLogger(S3ReadAheadByteChannel.class);
     private final S3AsyncClient client;
-    private final S3Path path;
+    private final S3PathImpl path;
     private final S3SeekableByteChannel delegator;
     private final int maxFragmentSize;
     private final int maxNumberFragments;
@@ -65,7 +65,7 @@ class S3ReadAheadByteChannel implements ReadableByteChannel {
      * @param timeUnit           the {@code TimeUnit} for the {@code timeout}.
      * @throws IOException if a problem occurs initializing the cached fragments
      */
-    S3ReadAheadByteChannel(S3Path path, int maxFragmentSize, int maxNumberFragments, S3AsyncClient client,
+    S3ReadAheadByteChannel(S3PathImpl path, int maxFragmentSize, int maxNumberFragments, S3AsyncClient client,
                            S3SeekableByteChannel delegator, Long timeout, TimeUnit timeUnit) throws IOException {
         Objects.requireNonNull(path);
         Objects.requireNonNull(client);

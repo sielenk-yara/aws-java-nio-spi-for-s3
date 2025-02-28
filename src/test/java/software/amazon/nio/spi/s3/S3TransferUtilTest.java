@@ -31,7 +31,7 @@ class S3TransferUtilTest {
     @Test
     @DisplayName("upload should succeed")
     void uploadFileCompletesSuccessfully() throws IOException {
-        S3Path file = mock();
+        S3PathImpl file = mock();
         when(file.bucketName()).thenReturn("a");
         when(file.getKey()).thenReturn("a");
 
@@ -46,7 +46,7 @@ class S3TransferUtilTest {
     @Test
     @DisplayName("IOException is thrown when timeout happens while uploading")
     void uploadTimeoutYieldsIOException() throws IOException {
-        S3Path file = mock();
+        S3PathImpl file = mock();
         when(file.bucketName()).thenReturn("a");
         when(file.getKey()).thenReturn("a");
 

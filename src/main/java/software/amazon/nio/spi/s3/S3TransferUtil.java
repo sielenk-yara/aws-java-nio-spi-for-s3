@@ -29,7 +29,7 @@ final class S3TransferUtil {
         this.timeUnit = timeUnit;
     }
 
-    void downloadToLocalFile(S3Path path, Path destination) throws InterruptedException, ExecutionException, TimeoutException {
+    void downloadToLocalFile(S3PathImpl path, Path destination) throws InterruptedException, ExecutionException, TimeoutException {
         try (var s3TransferManager = S3TransferManager.builder().s3Client(client).build()) {
             var downloadCompletableFuture = s3TransferManager.downloadFile(
                 DownloadFileRequest.builder()
@@ -49,7 +49,7 @@ final class S3TransferUtil {
         }
     }
 
-    void uploadLocalFile(S3Path path, Path localFile) throws IOException {
+    void uploadLocalFile(S3PathImpl path, Path localFile) throws IOException {
         try (var s3TransferManager = S3TransferManager.builder().s3Client(client).build()) {
             var uploadCompletableFuture = s3TransferManager.uploadFile(
                 UploadFileRequest.builder()

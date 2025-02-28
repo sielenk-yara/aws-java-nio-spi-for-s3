@@ -44,10 +44,10 @@ public class S3FileSystemInfo {
             throw new IllegalArgumentException("uri can not be null");
         }
 
+        BucketUtils.isValidDnsBucketName(bucket, true);
+
         key = uri.getAuthority();
         bucket = uri.getAuthority();
-
-        BucketUtils.isValidDnsBucketName(bucket, true);
     }
 
     public String key() {

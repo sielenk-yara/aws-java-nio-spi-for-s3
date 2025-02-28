@@ -13,10 +13,10 @@ import org.junit.jupiter.api.Test;
 
 class S3BasicFileAttributeViewTest {
     final String uriString = "s3://mybucket";
-    final S3FileSystemProvider provider = new S3FileSystemProvider();
+    final S3FileSystemProviderImpl provider = new S3FileSystemProviderImpl();
 
-    S3FileSystem fileSystem = (S3FileSystem) provider.getFileSystem(URI.create(uriString));
-    S3Path path = S3Path.getPath(fileSystem, uriString);
+    S3FileSystemImpl fileSystem = provider.getFileSystem(URI.create(uriString));
+    S3PathImpl path = S3PathImpl.getPath(fileSystem, uriString);
     S3BasicFileAttributeView view = new S3BasicFileAttributeView(path);
 
     @Test

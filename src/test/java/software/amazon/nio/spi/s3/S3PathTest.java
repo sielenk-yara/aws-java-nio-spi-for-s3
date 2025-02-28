@@ -36,32 +36,32 @@ import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 @ExtendWith(MockitoExtension.class)
 public class S3PathTest {
     final String uriString = "s3://mybucket";
-    final S3FileSystemProvider provider = new S3FileSystemProvider();
+    final S3FileSystemProviderImpl provider = new S3FileSystemProviderImpl();
 
     @Mock
     S3AsyncClient mockClient;
 
-    S3FileSystem fileSystem;
-    S3Path root;
-    S3Path absoluteDirectory;
-    S3Path relativeDirectory;
-    S3Path absoluteObject;
-    S3Path relativeObject;
-    S3Path withSpecialChars;
+    S3FileSystemImpl fileSystem;
+    S3PathImpl root;
+    S3PathImpl absoluteDirectory;
+    S3PathImpl relativeDirectory;
+    S3PathImpl absoluteObject;
+    S3PathImpl relativeObject;
+    S3PathImpl withSpecialChars;
 
     @BeforeEach
     public void init(){
-        fileSystem = (S3FileSystem) provider.getFileSystem(URI.create(uriString));
+        fileSystem = provider.getFileSystem(URI.create(uriString));
         fileSystem.clientProvider(new FixedS3ClientProvider(mockClient));
         lenient().when(mockClient.headObject(anyConsumer())).thenReturn(
                 CompletableFuture.supplyAsync(() -> HeadObjectResponse.builder().contentLength(100L).build()));
 
-        root = S3Path.getPath(fileSystem, PATH_SEPARATOR);
-        absoluteDirectory = S3Path.getPath(fileSystem, PATH_SEPARATOR, "dir1", "dir2/");
-        relativeDirectory = S3Path.getPath(fileSystem, "..", "dir3/");
-        absoluteObject = S3Path.getPath(fileSystem, PATH_SEPARATOR, "dir1", "dir2", "object");
-        relativeObject = S3Path.getPath(fileSystem, "dir1", "dir2", "object");
-        withSpecialChars = S3Path.getPath(fileSystem, "dir with space/and\tspecial&chars");
+        root = S3PathImpl.getPath(fileSystem, PATH_SEPARATOR);
+        absoluteDirectory = S3PathImpl.getPath(fileSystem, PATH_SEPARATOR, "dir1", "dir2/");
+        relativeDirectory = S3PathImpl.getPath(fileSystem, "..", "dir3/");
+        absoluteObject = S3PathImpl.getPath(fileSystem, PATH_SEPARATOR, "dir1", "dir2", "object");
+        relativeObject = S3PathImpl.getPath(fileSystem, "dir1", "dir2", "object");
+        withSpecialChars = S3PathImpl.getPath(fileSystem, "dir with space/and\tspecial&chars");
     }
 
     @AfterEach
@@ -71,17 +71,17 @@ public class S3PathTest {
 
     @Test
     public void getPathNullFileSystem() {
-        assertThrows(IllegalArgumentException.class, () -> S3Path.getPath(null, "/", "foo"));
+        assertThrows(IllegalArgumentException.class, () -> S3PathImpl.getPath(null, "/", "foo"));
     }
 
     @Test
     public void getPathNullFirst() {
-        assertThrows(IllegalArgumentException.class, () -> S3Path.getPath(fileSystem, null, "foo"));
+        assertThrows(IllegalArgumentException.class, () -> S3PathImpl.getPath(fileSystem, null, "foo"));
     }
 
     @Test
     public void getPathEmptyFirst() {
-        assertThrows(IllegalArgumentException.class, () -> S3Path.getPath(fileSystem, " ", "foo"));
+        assertThrows(IllegalArgumentException.class, () -> S3PathImpl.getPath(fileSystem, " ", "foo"));
     }
 
     @Test
@@ -145,10 +145,10 @@ public class S3PathTest {
         assertNull(root.getParent());
 
 
-        var dir1 = S3Path.getPath(fileSystem, "dir1/");
+        var dir1 = S3PathImpl.getPath(fileSystem, "dir1/");
         assertEquals(dir1, absoluteDirectory.getParent());
 
-        var top = S3Path.getPath(fileSystem, "/top");
+        var top = S3PathImpl.getPath(fileSystem, "/top");
         assertEquals(root, top.getRoot());
     }
 
@@ -163,9 +163,9 @@ public class S3PathTest {
 
     @Test
     public void getName() {
-        var dir1 = S3Path.getPath(fileSystem, "dir1/");
-        var dir2 = S3Path.getPath(fileSystem, "dir2/");
-        var object = S3Path.getPath(fileSystem, "object");
+        var dir1 = S3PathImpl.getPath(fileSystem, "dir1/");
+        var dir2 = S3PathImpl.getPath(fileSystem, "dir2/");
+        var object = S3PathImpl.getPath(fileSystem, "object");
 
         assertEquals(dir1, absoluteObject.getName(0));
         assertEquals(dir2, absoluteObject.getName(1));
@@ -184,11 +184,11 @@ public class S3PathTest {
 
     @Test
     public void subpath() {
-        var dir1 = S3Path.getPath(fileSystem, "dir1/");
-        var rootDir1 = S3Path.getPath(fileSystem, "/dir1/");
-        var dir2 = S3Path.getPath(fileSystem, "dir2/");
-        var up = S3Path.getPath(fileSystem, "..");
-        var obj = S3Path.getPath(fileSystem, "object");
+        var dir1 = S3PathImpl.getPath(fileSystem, "dir1/");
+        var rootDir1 = S3PathImpl.getPath(fileSystem, "/dir1/");
+        var dir2 = S3PathImpl.getPath(fileSystem, "dir2/");
+        var up = S3PathImpl.getPath(fileSystem, "..");
+        var obj = S3PathImpl.getPath(fileSystem, "object");
 
         assertEquals(rootDir1, absoluteDirectory.subpath(0,1));
         assertEquals(rootDir1, absoluteObject.subpath(0,1));
@@ -201,17 +201,17 @@ public class S3PathTest {
 
     @Test
     public void startsWith() {
-        final var beginning = S3Path.getPath(fileSystem, "/dir1/dir2/");
-        final var relativeBeginning = S3Path.getPath(fileSystem, "dir1/dir2/");
+        final var beginning = S3PathImpl.getPath(fileSystem, "/dir1/dir2/");
+        final var relativeBeginning = S3PathImpl.getPath(fileSystem, "dir1/dir2/");
 
         assertTrue(absoluteObject.startsWith(absoluteObject));
         assertTrue(relativeObject.startsWith(relativeObject));
         assertTrue(absoluteObject.startsWith(beginning));
         assertTrue(relativeObject.startsWith(relativeBeginning));
 
-        assertFalse(relativeObject.startsWith(S3Path.getPath(fileSystem, "dir1/dir2")));
+        assertFalse(relativeObject.startsWith(S3PathImpl.getPath(fileSystem, "dir1/dir2")));
         assertFalse(absoluteObject.startsWith(relativeBeginning));
-        assertFalse(absoluteObject.startsWith(S3Path.getPath((S3FileSystem) provider.getFileSystem(URI.create("s3://different-bucket")), "/dir1/")));
+        assertFalse(absoluteObject.startsWith(S3PathImpl.getPath(provider.getFileSystem(URI.create("s3://different-bucket")), "/dir1/")));
     }
 
     @Test
@@ -232,19 +232,19 @@ public class S3PathTest {
 
     @Test
     public void endsWith() {
-        final var object = S3Path.getPath(fileSystem, "object");
-        final var ending = S3Path.getPath(fileSystem, "dir2/object");
-        final var dir2 = S3Path.getPath(fileSystem, "dir2/");
-        final var dir3 = S3Path.getPath(fileSystem, "dir3/");
+        final var object = S3PathImpl.getPath(fileSystem, "object");
+        final var ending = S3PathImpl.getPath(fileSystem, "dir2/object");
+        final var dir2 = S3PathImpl.getPath(fileSystem, "dir2/");
+        final var dir3 = S3PathImpl.getPath(fileSystem, "dir3/");
 
         assertTrue(absoluteObject.endsWith(absoluteObject));
         assertTrue(absoluteObject.endsWith(object));
         assertTrue(absoluteObject.endsWith(ending));
         assertTrue(absoluteDirectory.endsWith(dir2));
 
-        assertFalse(absoluteDirectory.endsWith(S3Path.getPath(fileSystem, "dir2")));
-        assertFalse(absoluteDirectory.endsWith(S3Path.getPath(fileSystem, "/dir2")));
-        assertFalse(absoluteDirectory.endsWith(S3Path.getPath(fileSystem, "/no/")));
+        assertFalse(absoluteDirectory.endsWith(S3PathImpl.getPath(fileSystem, "dir2")));
+        assertFalse(absoluteDirectory.endsWith(S3PathImpl.getPath(fileSystem, "/dir2")));
+        assertFalse(absoluteDirectory.endsWith(S3PathImpl.getPath(fileSystem, "/no/")));
 
         assertTrue(relativeDirectory.endsWith(dir3));
     }
@@ -264,19 +264,19 @@ public class S3PathTest {
 
     @Test
     public void normalize() {
-        final var path = S3Path.getPath(fileSystem, "/foo/baa/foz///object");
-        final var path1 = S3Path.getPath(fileSystem, "/foo/baa/./foz///object");
-        final var path2 = S3Path.getPath(fileSystem, "/foo/baa/./../foz///object");
-        final var path3 = S3Path.getPath(fileSystem, "foo/baa/./../foz///object");
-        final var path4 = S3Path.getPath(fileSystem, "foo/baa/./../foz/.");
-        final var path5 = S3Path.getPath(fileSystem, "foo/baa/./../foz/..");
+        final var path = S3PathImpl.getPath(fileSystem, "/foo/baa/foz///object");
+        final var path1 = S3PathImpl.getPath(fileSystem, "/foo/baa/./foz///object");
+        final var path2 = S3PathImpl.getPath(fileSystem, "/foo/baa/./../foz///object");
+        final var path3 = S3PathImpl.getPath(fileSystem, "foo/baa/./../foz///object");
+        final var path4 = S3PathImpl.getPath(fileSystem, "foo/baa/./../foz/.");
+        final var path5 = S3PathImpl.getPath(fileSystem, "foo/baa/./../foz/..");
 
-        assertEquals(S3Path.getPath(fileSystem, "/foo/baa/foz/object"), path.normalize());
-        assertEquals(S3Path.getPath(fileSystem, "/foo/baa/foz/object"), path1.normalize());
-        assertEquals(S3Path.getPath(fileSystem, "/foo/foz/object"), path2.normalize());
-        assertEquals(S3Path.getPath(fileSystem, "foo/foz/object"), path3.normalize());
-        assertEquals(S3Path.getPath(fileSystem, "foo/foz/"), path4.normalize());
-        assertEquals(S3Path.getPath(fileSystem, "foo/"), path5.normalize());
+        assertEquals(S3PathImpl.getPath(fileSystem, "/foo/baa/foz/object"), path.normalize());
+        assertEquals(S3PathImpl.getPath(fileSystem, "/foo/baa/foz/object"), path1.normalize());
+        assertEquals(S3PathImpl.getPath(fileSystem, "/foo/foz/object"), path2.normalize());
+        assertEquals(S3PathImpl.getPath(fileSystem, "foo/foz/object"), path3.normalize());
+        assertEquals(S3PathImpl.getPath(fileSystem, "foo/foz/"), path4.normalize());
+        assertEquals(S3PathImpl.getPath(fileSystem, "foo/"), path5.normalize());
 
         assertEquals(root, root.normalize());
         assertEquals(fileSystem.getPath("../dir3/"), relativeDirectory.normalize());
@@ -285,8 +285,8 @@ public class S3PathTest {
 
     @Test
     public void normalizeAndIsAbsolute() {
-        final S3Path pathRelative = S3Path.getPath(fileSystem, "foo/./baa/");
-        final S3Path pathAbsolute = S3Path.getPath(fileSystem, "/foo/./baa/");
+        final S3PathImpl pathRelative = S3PathImpl.getPath(fileSystem, "foo/./baa/");
+        final S3PathImpl pathAbsolute = S3PathImpl.getPath(fileSystem, "/foo/./baa/");
 
         assertFalse(pathRelative.isAbsolute());
         assertTrue(pathAbsolute.isAbsolute());
@@ -394,23 +394,23 @@ public class S3PathTest {
 
     @Test
     public void toRealPath() {
-        assertEquals(S3Path.getPath(fileSystem, "foo/../bar").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
-                S3Path.getPath(fileSystem, "bar").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
+        assertEquals(S3PathImpl.getPath(fileSystem, "foo/../bar").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
+                S3PathImpl.getPath(fileSystem, "bar").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
 
-        assertEquals(S3Path.getPath(fileSystem, "foo/../bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
-                S3Path.getPath(fileSystem, "bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
+        assertEquals(S3PathImpl.getPath(fileSystem, "foo/../bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
+                S3PathImpl.getPath(fileSystem, "bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
 
-        assertEquals(S3Path.getPath(fileSystem, "foo/.././bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
-                S3Path.getPath(fileSystem, "bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
+        assertEquals(S3PathImpl.getPath(fileSystem, "foo/.././bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
+                S3PathImpl.getPath(fileSystem, "bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
 
-        assertEquals(S3Path.getPath(fileSystem, "foo/../bar/.").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
-                S3Path.getPath(fileSystem, "bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
+        assertEquals(S3PathImpl.getPath(fileSystem, "foo/../bar/.").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
+                S3PathImpl.getPath(fileSystem, "bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
 
-        assertEquals(S3Path.getPath(fileSystem, "foo/./bar/..").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
-                S3Path.getPath(fileSystem, "foo/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
+        assertEquals(S3PathImpl.getPath(fileSystem, "foo/./bar/..").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
+                S3PathImpl.getPath(fileSystem, "foo/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
 
-        assertEquals(S3Path.getPath(fileSystem, "/foo/../bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
-                S3Path.getPath(fileSystem, "/bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
+        assertEquals(S3PathImpl.getPath(fileSystem, "/foo/../bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString(),
+                S3PathImpl.getPath(fileSystem, "/bar/").toRealPath(LinkOption.NOFOLLOW_LINKS).toString());
     }
 
     @Test
@@ -478,19 +478,19 @@ public class S3PathTest {
     public void testEquals() {
         // true because the equals contract requires the use of realPath which uses an absolute path which is relative to
         // the working directory, which is always "/" for a bucket.
-        assertEquals(S3Path.getPath(fileSystem, "dir1/"), S3Path.getPath(fileSystem, "/dir1/"));
+        assertEquals(S3PathImpl.getPath(fileSystem, "dir1/"), S3PathImpl.getPath(fileSystem, "/dir1/"));
 
-        S3FileSystem fooFS = null;
+        S3FileSystemImpl fooFS = null;
         try{
-            fooFS = (S3FileSystem) provider.getFileSystem(URI.create("s3://foo"));
-            assertNotEquals(S3Path.getPath(fileSystem, "dir1/"), S3Path.getPath(fooFS, "/dir1/"));
+            fooFS = provider.getFileSystem(URI.create("s3://foo"));
+            assertNotEquals(S3PathImpl.getPath(fileSystem, "dir1/"), S3PathImpl.getPath(fooFS, "/dir1/"));
         } finally {
             if ( fooFS != null ) provider.closeFileSystem(fooFS);
         }
 
         // not equal because in s3 dir1 cannot be implied to be a directory unless it ends with "/"
-        assertNotEquals(S3Path.getPath(fileSystem, "dir1/"), S3Path.getPath(fileSystem, "dir1"));
-        assertNotEquals(S3Path.getPath(fileSystem, "/dir1/"), S3Path.getPath(fileSystem, "/dir1"));
+        assertNotEquals(S3PathImpl.getPath(fileSystem, "dir1/"), S3PathImpl.getPath(fileSystem, "dir1"));
+        assertNotEquals(S3PathImpl.getPath(fileSystem, "/dir1/"), S3PathImpl.getPath(fileSystem, "/dir1"));
     }
 
     @Test
@@ -535,21 +535,21 @@ public class S3PathTest {
 
     @Test
     void testRelativizeAgainstRoot() {
-        var s3Path = S3Path.getPath(fileSystem, "/");
-        var relativePath = s3Path.relativize(S3Path.getPath(fileSystem, "/a/b/c/d"));
+        var s3Path = S3PathImpl.getPath(fileSystem, "/");
+        var relativePath = s3Path.relativize(S3PathImpl.getPath(fileSystem, "/a/b/c/d"));
         assertEquals("a/b/c/d", relativePath.toString());
         assertFalse(relativePath.isAbsolute());
 
-        var emptyS3Path = S3Path.getPath(fileSystem, "");
-        relativePath = emptyS3Path.relativize(S3Path.getPath(fileSystem, "a/b/c/d"));
+        var emptyS3Path = S3PathImpl.getPath(fileSystem, "");
+        relativePath = emptyS3Path.relativize(S3PathImpl.getPath(fileSystem, "a/b/c/d"));
         assertEquals("a/b/c/d", relativePath.toString());
         assertFalse(relativePath.isAbsolute());
     }
 
     @Test
     void testRelativizeWithAbsoluteAndRelative() {
-        var s3Path = S3Path.getPath(fileSystem, "/a/b/c");
-        var relativePath = S3Path.getPath(fileSystem, "a/b/c/d");
+        var s3Path = S3PathImpl.getPath(fileSystem, "/a/b/c");
+        var relativePath = S3PathImpl.getPath(fileSystem, "a/b/c/d");
         assertThatExceptionOfType(IllegalArgumentException.class)
                 .isThrownBy(() -> s3Path.relativize(relativePath))
                 .withMessage("to obtain a relative path both must be absolute or both must be relative");

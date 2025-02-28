@@ -9,7 +9,7 @@ import java.net.URI;
 import software.amazon.nio.spi.s3.util.S3FileSystemInfo;
 import software.amazon.nio.spi.s3.util.S3XFileSystemInfo;
 
-public class S3XFileSystemProvider extends S3FileSystemProvider {
+public final class S3XFileSystemProviderImpl extends S3FileSystemProviderBase {
 
     static final String SCHEME = "s3x";
 

@@ -31,10 +31,10 @@ public class S3XFileSystemProviderTest {
 
     @Test
     public void nio_provider() {
-        var path = (S3Path)Paths.get(URI.create("s3x://myendpoint/mybucket/myfolder"));
+        var path = (S3PathImpl)Paths.get(URI.create("s3x://myendpoint/mybucket/myfolder"));
 
         var fs = path.getFileSystem();
-        then(fs.provider()).isInstanceOf(S3XFileSystemProvider.class);
+        then(fs.provider()).isInstanceOf(S3XFileSystemProviderImpl.class);
         then(fs.getConfiguration().getEndpoint()).isEqualTo("myendpoint");
         then(fs.getConfiguration().getBucketName()).isEqualTo("mybucket");
         then(path.getKey()).isEqualTo("myfolder");
@@ -44,13 +44,13 @@ public class S3XFileSystemProviderTest {
     @DisplayName("newFileSystem(Path, env) should throw")
     public void newFileSystemPath() {
         assertThatThrownBy(
-            () -> new S3XFileSystemProvider().newFileSystem(Paths.get(URI1), Collections.emptyMap())
+            () -> new S3XFileSystemProviderImpl().newFileSystem(Paths.get(URI1), Collections.emptyMap())
         ).isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
     public void getFileSystem() {
-        var provider = new S3XFileSystemProvider();
+        var provider = new S3XFileSystemProviderImpl();
 
         FileSystem fs2 = provider.getFileSystem(URI1);
         then(provider.getFileSystem(URI1)).isSameAs(fs2);
@@ -65,12 +65,12 @@ public class S3XFileSystemProviderTest {
 
     @Test
     public void setCredentialsThroughURI() throws Exception {
-        var p = new S3XFileSystemProvider();
+        var p = new S3XFileSystemProviderImpl();
         var BUILDER = spy(S3AsyncClient.crtBuilder());
         restoreSystemProperties(() -> {
             System.setProperty("aws.region", "us-west-1");
 
-            var fs = (S3FileSystem) p.getFileSystem(URI.create("s3x://urikey:urisecret@some.where.com:1010/bucket"));
+            var fs = p.getFileSystem(URI.create("s3x://urikey:urisecret@some.where.com:1010/bucket"));
             fs.clientProvider().asyncClientBuilder(BUILDER);
             fs.client();
             fs.close();
@@ -87,7 +87,7 @@ public class S3XFileSystemProviderTest {
 
     @Test
     public void getPath() {
-        var p = new S3XFileSystemProvider();
+        var p = new S3XFileSystemProviderImpl();
         then(p.getPath(URI1)).isNotNull();
 
         // Make sure a file system is created if not already done (if the file

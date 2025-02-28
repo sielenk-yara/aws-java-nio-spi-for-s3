@@ -14,7 +14,6 @@ import static software.amazon.nio.spi.s3.S3Matchers.anyConsumer;
 
 import java.io.IOException;
 import java.nio.file.attribute.FileTime;
-import java.nio.file.spi.FileSystemProvider;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
@@ -49,13 +48,13 @@ public class S3BasicFileAttributesTest {
 
         @BeforeAll
         void configureDirectory() throws IOException {
-            S3FileSystem fs = mock();
-            FileSystemProvider provider = mock();
+            S3FileSystemImpl fs = mock();
+            S3FileSystemProviderImpl provider = mock();
             when(fs.provider()).thenReturn(provider);
             when(fs.getConfiguration()).thenReturn(new S3NioSpiConfiguration());
             when(provider.getScheme()).thenReturn("s3");
 
-            var directory = S3Path.getPath(fs, "/somedirectory/");
+            var directory = S3PathImpl.getPath(fs, "/somedirectory/");
             directoryAttributes = S3BasicFileAttributes.get(directory, Duration.ofMinutes(TimeOutUtils.TIMEOUT_TIME_LENGTH_1));
         }
 
@@ -124,9 +123,9 @@ public class S3BasicFileAttributesTest {
 
         @BeforeAll
         void configureRegularFile() throws IOException {
-            S3FileSystem fs = mock();
+            S3FileSystemImpl fs = mock();
 
-            FileSystemProvider provider = mock();
+            S3FileSystemProviderImpl provider = mock();
             when(fs.provider()).thenReturn(provider);
             when(provider.getScheme()).thenReturn("s3");
 
@@ -144,7 +143,7 @@ public class S3BasicFileAttributesTest {
                 )
             );
 
-            var file = S3Path.getPath(fs, "somefile");
+            var file = S3PathImpl.getPath(fs, "somefile");
             attributes = S3BasicFileAttributes.get(file, Duration.ofMinutes(TimeOutUtils.TIMEOUT_TIME_LENGTH_1));
         }
 
@@ -212,10 +211,10 @@ public class S3BasicFileAttributesTest {
     @Test
     @DisplayName("When a timeout happens getting attributes of a regular file, a RuntimeException should be thrown")
     void sizeOfFileThrowsWhenTimeout(){
-        FileSystemProvider provider = mock();
+        S3FileSystemProviderImpl provider = mock();
         when(provider.getScheme()).thenReturn("s3");
 
-        S3FileSystem fs = mock();
+        S3FileSystemImpl fs = mock();
         when(fs.provider()).thenReturn(provider);
         when(fs.getConfiguration()).thenReturn(new S3NioSpiConfiguration());
 
@@ -235,7 +234,7 @@ public class S3BasicFileAttributesTest {
             )
         );
 
-        assertThatThrownBy(() -> S3BasicFileAttributes.get(S3Path.getPath(fs, "somefile"), Duration.ofMillis(1)))
+        assertThatThrownBy(() -> S3BasicFileAttributes.get(S3PathImpl.getPath(fs, "somefile"), Duration.ofMillis(1)))
             .isInstanceOf(IOException.class)
             .hasMessageContainingAll("operation timed out", "connectivity", "S3");
     }

@@ -33,9 +33,9 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 @SuppressWarnings("unchecked")
 public class S3ReadAheadByteChannelTest {
 
-    final S3FileSystemProvider provider = new S3FileSystemProvider();
+    final S3FileSystemProviderImpl provider = new S3FileSystemProviderImpl();
 
-    S3Path path;
+    S3PathImpl path;
 
     @Mock
     S3SeekableByteChannel delegator;
@@ -48,7 +48,7 @@ public class S3ReadAheadByteChannelTest {
 
     @BeforeEach
     public void setup() throws IOException {
-        path = S3Path.getPath((S3FileSystem) provider.getFileSystem(URI.create("s3://my-bucket")), "/object");
+        path = S3PathImpl.getPath(provider.getFileSystem(URI.create("s3://my-bucket")), "/object");
 
         // mocking
         lenient().when(delegator.size()).thenReturn(52L);

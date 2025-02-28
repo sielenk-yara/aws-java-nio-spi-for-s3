@@ -18,9 +18,9 @@ class S3BasicFileAttributeView implements BasicFileAttributeView {
 
     private final Logger logger = LoggerFactory.getLogger("S3BasicFileAttributeView");
 
-    private final S3Path path;
+    private final S3PathImpl path;
 
-    S3BasicFileAttributeView(S3Path path) {
+    S3BasicFileAttributeView(S3PathImpl path) {
         this.path = path;
     }
 

@@ -22,7 +22,7 @@ import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.ScatteringByteChannel;
 import java.nio.channels.WritableByteChannel;
 
-public class S3FileChannel extends FileChannel {
+class S3FileChannel extends FileChannel {
 
     private final S3SeekableByteChannel byteChannel;
 

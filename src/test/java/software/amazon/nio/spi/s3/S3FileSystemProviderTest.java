@@ -79,18 +79,18 @@ import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Publisher;
 @ExtendWith(MockitoExtension.class)
 public class S3FileSystemProviderTest {
 
-    S3FileSystemProvider provider;
-    S3FileSystem fs;
+    S3FileSystemProviderImpl provider;
+    S3FileSystemImpl fs;
     String pathUri = "s3://foo/baa";
     @Mock
     S3AsyncClient mockClient;
 
     @BeforeEach
     public void init() {
-        provider = new S3FileSystemProvider();
+        provider = new S3FileSystemProviderImpl();
         lenient().when(mockClient.headObject(anyConsumer())).thenReturn(
                 CompletableFuture.supplyAsync(() -> HeadObjectResponse.builder().contentLength(100L).build()));
-        fs = (S3FileSystem) provider.getFileSystem(URI.create(pathUri));
+        fs = provider.getFileSystem(URI.create(pathUri));
         fs.clientProvider(new FixedS3ClientProvider(mockClient));
     }
 
@@ -108,7 +108,7 @@ public class S3FileSystemProviderTest {
     @DisplayName("newFileSystem(Path, env) should throw")
     public void newFileSystemPath() {
         assertThatThrownBy(
-            () -> new S3FileSystemProvider().newFileSystem(Paths.get(pathUri), Collections.emptyMap())
+            () -> new S3FileSystemProviderImpl().newFileSystem(Paths.get(pathUri), Collections.emptyMap())
         ).isInstanceOf(UnsupportedOperationException.class);
     }
 
@@ -514,8 +514,8 @@ public class S3FileSystemProviderTest {
         var foo = fs.getPath("/foo");
         assertThrows(UnsupportedOperationException.class, () -> provider.setAttribute(foo, "x", "y"));
     }
-    
-        
+
+
     @Test
     public void defaultForcePathStyle() throws Exception {
         // GIVEN

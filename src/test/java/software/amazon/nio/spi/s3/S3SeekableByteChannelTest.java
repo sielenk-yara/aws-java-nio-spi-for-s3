@@ -50,8 +50,8 @@ import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 @SuppressWarnings("unchecked")
 public class S3SeekableByteChannelTest {
 
-    S3FileSystem fs;
-    S3Path path;
+    S3FileSystemImpl fs;
+    S3PathImpl path;
     byte[] bytes = "abcdef".getBytes(StandardCharsets.UTF_8);
 
     @Mock
@@ -72,10 +72,10 @@ public class S3SeekableByteChannelTest {
                         GetObjectResponse.builder().contentLength(6L).build(),
                         bytes)));
 
-        var provider = new S3FileSystemProvider();
-        fs = (S3FileSystem) provider.getFileSystem(URI.create("s3://test-bucket"));
+        var provider = new S3FileSystemProviderImpl();
+        fs = provider.getFileSystem(URI.create("s3://test-bucket"));
         fs.clientProvider(new FixedS3ClientProvider(mockClient));
-        path = (S3Path) fs.getPath("/object");
+        path = fs.getPath("/object");
     }
 
     @AfterEach

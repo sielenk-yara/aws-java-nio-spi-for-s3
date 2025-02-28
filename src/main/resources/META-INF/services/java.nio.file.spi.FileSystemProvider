@@ -3,5 +3,5 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-software.amazon.nio.spi.s3.S3FileSystemProvider
-software.amazon.nio.spi.s3.S3XFileSystemProvider
+software.amazon.nio.spi.s3.S3FileSystemProviderImpl
+software.amazon.nio.spi.s3.S3XFileSystemProviderImpl
