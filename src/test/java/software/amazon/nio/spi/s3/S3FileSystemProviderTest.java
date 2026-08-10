@@ -9,6 +9,7 @@ import static java.util.concurrent.CompletableFuture.completedFuture;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.BDDAssertions.then;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -82,6 +83,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Publisher;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.nio.spi.s3.config.S3NioSpiConfiguration;
 
 @SuppressWarnings("unchecked")
@@ -131,6 +133,17 @@ public class S3FileSystemProviderTest {
 
         assertThatCode(() -> provider.newFileSystem(uri, env))
                 .doesNotThrowAnyExceptionExcept(FileSystemAlreadyExistsException.class, IOException.class);
+
+        // Exercise the real config-merge + bucket-creation path with a mixed env map that combines
+        // config keys (merged into the configuration) and bucket-creation keys (consumed directly).
+        final var mixedEnv = Map.<String, Object>of(
+            S3NioSpiConfiguration.AWS_REGION_PROPERTY, "us-east-1",
+            S3NioSpiConfiguration.S3_SPI_TIMEOUT_LOW_PROPERTY, "2",
+            "acl", "private",
+            "grantRead", "id=abc",
+            "locationConstraint", "us-east-1");
+        assertThatCode(() -> provider.newFileSystem(URI.create("s3://another-bucket"), mixedEnv))
+                .doesNotThrowAnyExceptionExcept(FileSystemAlreadyExistsException.class, IOException.class);
     }
 
     @Test
@@ -171,6 +184,73 @@ public class S3FileSystemProviderTest {
 
         // Clean up
         testProvider.closeFileSystem(createdFs);
+    }
+
+    @Test
+    @DisplayName("newFileSystem merges the env map (minus bucket-creation keys) into the configuration")
+    public void newFileSystemMergesEnvIntoConfig() throws IOException {
+        final var uri = URI.create("s3://env-merged-bucket");
+        final var credentials = AwsBasicCredentials.create("k", "s");
+
+        // Subclass skips the remote createBucket call but reproduces the real config-merge path.
+        var testProvider = new S3FileSystemProvider() {
+            @Override
+            public FileSystem newFileSystem(final URI uri, final Map<String, ?> env) {
+                var info = fileSystemInfo(uri);
+                var config = new S3NioSpiConfiguration().withEndpoint(info.endpoint()).withBucketName(info.bucket());
+                config.withOverrides(env);
+                return getOrCreateFileSystem(info.key(), config);
+            }
+        };
+
+        var env = Map.of(
+            S3NioSpiConfiguration.AWS_REGION_PROPERTY, "eu-central-1",
+            S3NioSpiConfiguration.S3_SPI_TIMEOUT_LOW_PROPERTY, "7",
+            S3NioSpiConfiguration.S3_SPI_CREDENTIALS_PROPERTY, credentials);
+
+        var fs = (S3FileSystem) testProvider.newFileSystem(uri, env);
+        try {
+            then(fs.getConfiguration().getRegion()).isEqualTo("eu-central-1");
+            then(fs.getConfiguration().getTimeoutLow()).isEqualTo(7L);
+            then(fs.getConfiguration().getCredentials()).isSameAs(credentials);
+        } finally {
+            testProvider.closeFileSystem(fs);
+        }
+    }
+
+    @Test
+    @DisplayName("newFileSystem throws FileSystemAlreadyExistsException when a (lazy) view already exists")
+    public void newFileSystemThrowsWhenViewAlreadyExists() {
+        final var uri = URI.create("s3://already-materialized-bucket/key");
+        // Materialize a lazy view via getPath (does not create a bucket, no network).
+        provider.getPath(uri);
+        try {
+            // A subsequent newFileSystem for the same bucket must throw before any remote side effect.
+            assertThrows(FileSystemAlreadyExistsException.class,
+                () -> provider.newFileSystem(uri, Collections.<String, Object>emptyMap()));
+        } finally {
+            provider.closeFileSystem((S3FileSystem) provider.getFileSystem(uri));
+        }
+    }
+
+    @Test
+    @DisplayName("provider operations use the per-filesystem timeout, not a shared provider config (#597)")
+    public void perFilesystemTimeoutsUsedByProviderOps() {
+        // Two file systems for different buckets with different timeout-low values.
+        var fsA = (S3FileSystem) provider.getPath(URI.create("s3://bucket-timeout-a")).getFileSystem();
+        var fsB = (S3FileSystem) provider.getPath(URI.create("s3://bucket-timeout-b")).getFileSystem();
+        try {
+            fsA.getConfiguration().withTimeoutLow(11L);
+            fsB.getConfiguration().withTimeoutLow(22L);
+
+            // Each file system reports its own timeout; creating one after the other does not
+            // clobber the earlier one (the pre-3.0 shared-provider-config bug).
+            then(fsA.getConfiguration().getTimeoutLow()).isEqualTo(11L);
+            then(fsB.getConfiguration().getTimeoutLow()).isEqualTo(22L);
+        } finally {
+            provider.closeFileSystem(fsA);
+            provider.closeFileSystem(fsB);
+        }
     }
 
     @Test

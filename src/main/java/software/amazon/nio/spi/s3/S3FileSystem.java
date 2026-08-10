@@ -85,15 +85,9 @@ public class S3FileSystem extends FileSystem {
         configuration = (config == null) ? new S3NioSpiConfiguration() : config;
         bucketName = configuration.getBucketName();
 
-        // This is quite questionable and may be removed in future versions:
-        provider.setConfiguration(config);
-        // The configuration field in {@code S3FileSystemProvider} is used for certain tasks
-        // that are implemented there.
-        // But those tasks are in service of {@code S3FileSystem} instances.
-        // So if there are multiple ones with different configurations, the provider will use
-        // the one that has been set by the last created filesystem, overriding potentially
-        // different values in older {@code S3FileSystem} instances.
-        //
+        // Each S3FileSystem owns its configuration. Provider operations that need configuration
+        // (e.g. API timeouts) read it from the target path's file system via getConfiguration(),
+        // so there is no shared provider-level configuration to keep in sync.
         // See https://github.com/awslabs/aws-java-nio-spi-for-s3/issues/597
 
         logger.debug("creating FileSystem for '{}://{}'", provider.getScheme(), bucketName);

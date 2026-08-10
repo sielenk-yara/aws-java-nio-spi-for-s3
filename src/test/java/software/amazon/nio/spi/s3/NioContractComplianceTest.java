@@ -202,7 +202,7 @@ public class NioContractComplianceTest {
     }
 
     @Test
-    void getPathMaterializesViewWithoutMarkingExplicitlyCreated() {
+    void getPathMaterializesViewReturnedByGetFileSystem() {
         var provider = new S3FileSystemProvider();
         var path = provider.getPath(URI.create("s3://lazy-bucket/key"));
         assertNotNull(path);

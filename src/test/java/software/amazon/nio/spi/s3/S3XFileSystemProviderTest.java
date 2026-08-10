@@ -97,4 +97,33 @@ public class S3XFileSystemProviderTest {
         p.closeFileSystem(p.getFileSystem(URI1));
     }
 
+    @Test
+    @DisplayName("env-map credentials override credentials parsed from the s3x URI")
+    public void envMapCredentialsOverrideUriCredentials() throws Exception {
+        // Reproduce the real config-merge path without the remote createBucket call.
+        var provider = new S3XFileSystemProvider() {
+            @Override
+            public FileSystem newFileSystem(final URI uri, final java.util.Map<String, ?> env) {
+                var info = fileSystemInfo(uri);
+                var config = new software.amazon.nio.spi.s3.config.S3NioSpiConfiguration()
+                    .withEndpoint(info.endpoint()).withBucketName(info.bucket());
+                if (info.accessKey() != null) {
+                    config.withCredentials(info.accessKey(), info.accessSecret());
+                }
+                config.withOverrides(env);
+                return getOrCreateFileSystem(info.key(), config);
+            }
+        };
+
+        var envCreds = software.amazon.awssdk.auth.credentials.AwsBasicCredentials.create("envKey", "envSecret");
+        var fs = (S3FileSystem) provider.newFileSystem(URI7,
+            java.util.Map.of(software.amazon.nio.spi.s3.config.S3NioSpiConfiguration.S3_SPI_CREDENTIALS_PROPERTY, envCreds));
+        try {
+            // URI7 carries key:secret, but the env-map credentials win.
+            then(fs.getConfiguration().getCredentials()).isSameAs(envCreds);
+        } finally {
+            provider.closeFileSystem(fs);
+        }
+    }
+
 }

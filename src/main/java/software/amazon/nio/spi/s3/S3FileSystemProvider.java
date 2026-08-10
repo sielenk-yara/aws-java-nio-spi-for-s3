@@ -101,24 +101,19 @@ public class S3FileSystemProvider extends FileSystemProvider {
     static final String SCHEME = "s3";
     // Instance registry for all live S3FileSystem views, keyed by file-system key (bucket).
     // Both getPath (lazy) and newFileSystem populate this so that a single instance per key is
-    // shared. See getOrCreateFileSystem.
+    // shared. See getOrCreateFileSystem. FileSystemAlreadyExistsException (newFileSystem) and
+    // FileSystemNotFoundException (getFileSystem) are gated purely on membership of this cache,
+    // whether an entry was created explicitly by newFileSystem or lazily by getPath / Paths.get.
     private static final Map<String, S3FileSystem> FS_CACHE = new ConcurrentHashMap<>();
-    // Keys that were explicitly created via newFileSystem(URI, Map). This is what
-    // FileSystemAlreadyExistsException / getFileSystem's FileSystemNotFoundException are gated on,
-    // NOT lazy views materialized by getPath. This mirrors the reference JDK providers, where only
-    // newFileSystem populates the tracking map (cf. jdk.nio.zipfs.ZipFileSystemProvider).
-    private static final Set<String> EXPLICITLY_CREATED = ConcurrentHashMap.newKeySet();
 
     /**
-     * This variable holds the configuration for the S3 NIO Service Provider Interface (SPI).
-     * It is used to manage and handle the configuration details required for interaction
-     * with S3 NIO services.
-     *
-     * @deprecated This variable is deprecated and may be removed in future versions.
-     *             Consider using updated configuration mechanisms if available.
+     * The env-map keys that configure the {@code createBucket} request itself rather than the file
+     * system configuration. These are consumed directly by {@link #newFileSystem(URI, Map)} and are
+     * not merged into the {@link S3NioSpiConfiguration}.
      */
-    @Deprecated
-    protected S3NioSpiConfiguration configuration = new S3NioSpiConfiguration();
+    private static final Set<String> BUCKET_CREATION_KEYS = Set.of(
+        "acl", "grantFullControl", "grantRead", "grantReadACP", "grantWrite", "grantWriteACP",
+        "locationConstraint");
 
     private final Logger logger = LoggerFactory.getLogger(this.getClass().getName());
 
@@ -179,19 +174,24 @@ public class S3FileSystemProvider extends FileSystemProvider {
         var envMap = (env != null) ? (Map<String, Object>) env : Collections.<String, Object>emptyMap();
 
         var info = fileSystemInfo(uri);
+
+        // Contract: FileSystemAlreadyExistsException is thrown if a file system for this URI already
+        // exists in this JVM -- whether it was created by a previous newFileSystem call or lazily
+        // materialized by getPath / Paths.get. Gate on the instance cache, before any remote side
+        // effect, so a duplicate call fails fast.
+        if (FS_CACHE.containsKey(info.key())) {
+            throw new FileSystemAlreadyExistsException(
+                "a file system for '" + info.key() + "' already exists");
+        }
+
         var config = new S3NioSpiConfiguration().withEndpoint(info.endpoint()).withBucketName(info.bucket());
         if (info.accessKey() != null) {
             config.withCredentials(info.accessKey(), info.accessSecret());
         }
-
-        // Contract: FileSystemAlreadyExistsException reflects whether a FileSystem for this URI was
-        // previously created (in this JVM) by an invocation of THIS method -- not whether the
-        // backing S3 bucket exists. Reserve the slot up front so a duplicate call fails fast,
-        // before any remote side effect (cf. ZipFileSystemProvider).
-        if (!EXPLICITLY_CREATED.add(info.key())) {
-            throw new FileSystemAlreadyExistsException(
-                "a file system for '" + info.key() + "' already exists");
-        }
+        // Merge the caller-supplied env map (minus the bucket-creation-only keys) into the
+        // configuration at the highest precedence, so region, credentials, endpoint, timeouts, etc.
+        // supplied via newFileSystem's env take effect (and override URI-derived values).
+        config.withOverrides(configOverridesFrom(envMap));
 
         var bucketName = config.getBucketName();
         try (var client = new S3ClientProvider(config).configureCrtClient().build()) {
@@ -219,29 +219,48 @@ public class S3FileSystemProvider extends FileSystemProvider {
             var cause = e.getCause();
             if (cause instanceof BucketAlreadyOwnedByYouException) {
                 // The backing store is already provisioned and owned by us -- analogous to opening
-                // an existing backing file. Proceed with the reserved, cached FileSystem so that a
-                // persistent bucket can be reused across JVM runs (see PR #770).
+                // an existing backing file. Proceed with the cached FileSystem so that a persistent
+                // bucket can be reused across JVM runs (see PR #770).
                 logger.debug("Bucket '{}' already exists and is owned by you; reusing it", bucketName);
             } else if (cause instanceof BucketAlreadyExistsException) {
                 // Owned by another account -- an access/ownership failure, not "FS already exists".
-                EXPLICITLY_CREATED.remove(info.key());
                 throw new IOException("bucket '" + bucketName
                     + "' already exists and is owned by another account", cause);
             } else {
-                EXPLICITLY_CREATED.remove(info.key());
                 throw new IOException(e.getMessage(), cause);
             }
         } catch (InterruptedException | TimeoutException | SdkException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            EXPLICITLY_CREATED.remove(info.key());
             throw new IOException(e.getMessage(), e);
         }
 
-        // Register (or reuse) the instance for this key with the configuration used to create it,
-        // preserving any credentials/endpoint when it is later retrieved via getFileSystem().
-        return getOrCreateFileSystem(info.key(), config);
+        // Register the instance for this key with the configuration used to create it, preserving any
+        // credentials/endpoint/region when it is later retrieved via getFileSystem(). If another
+        // thread materialized a view for this key in the meantime, honor the already-exists contract.
+        var newFs = new S3FileSystem(this, config);
+        var existing = FS_CACHE.putIfAbsent(info.key(), newFs);
+        if (existing != null) {
+            try {
+                newFs.close();
+            } catch (IOException | RuntimeException ignore) {
+                logger.debug("failed to close redundant file system instance", ignore);
+            }
+            throw new FileSystemAlreadyExistsException(
+                "a file system for '" + info.key() + "' already exists");
+        }
+        return newFs;
+    }
+
+    /**
+     * Returns the subset of {@code env} entries that should be merged into the file-system
+     * configuration, i.e. every entry whose key is not a bucket-creation-only key.
+     */
+    private static Map<String, Object> configOverridesFrom(Map<String, Object> env) {
+        return env.entrySet().stream()
+            .filter(e -> !BUCKET_CREATION_KEYS.contains(e.getKey()))
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
     /**
@@ -461,7 +480,7 @@ public class S3FileSystemProvider extends FileSystemProvider {
             directoryKey = directoryKey + PATH_SEPARATOR;
         }
 
-        var timeOut = configuration.getTimeoutLow();
+        var timeOut = s3Directory.getFileSystem().getConfiguration().getTimeoutLow();
         final var unit = MINUTES;
         final var s3Client = s3Directory.getFileSystem().client();
 
@@ -521,7 +540,7 @@ public class S3FileSystemProvider extends FileSystemProvider {
 
         final var s3Client = s3Path.getFileSystem().client();
 
-        var timeOut = configuration.getTimeoutLow();
+        var timeOut = s3Path.getFileSystem().getConfiguration().getTimeoutLow();
         final var unit = MINUTES;
         try {
             List<List<ObjectIdentifier>> keys;
@@ -569,7 +588,7 @@ public class S3FileSystemProvider extends FileSystemProvider {
         final var prefix = s3Path.toRealPath(NOFOLLOW_LINKS).getKey();
         final var bucketName = s3Path.bucketName();
         final var s3Client = s3Path.getFileSystem().client();
-        var timeOut = configuration.getTimeoutLow();
+        var timeOut = s3Path.getFileSystem().getConfiguration().getTimeoutLow();
         final var unit = MINUTES;
         try {
             var keys = s3Path.isDirectory()
@@ -632,7 +651,7 @@ public class S3FileSystemProvider extends FileSystemProvider {
         final var s3Client = s3SourcePath.getFileSystem().client();
         final var sourceBucket = s3SourcePath.bucketName();
 
-        final var timeOut = configuration.getTimeoutHigh();
+        final var timeOut = s3SourcePath.getFileSystem().getConfiguration().getTimeoutHigh();
         final var unit = MINUTES;
 
         var fileExistsAndCannotReplace = cannotReplaceAndFileExistsCheck(options, s3Client);
@@ -823,7 +842,7 @@ public class S3FileSystemProvider extends FileSystemProvider {
 
         final var response = getCompletableFutureForHead(s3Path);
 
-        var timeOut = configuration.getTimeoutLow();
+        var timeOut = s3Path.getFileSystem().getConfiguration().getTimeoutLow();
         var unit = MINUTES;
 
         try {
@@ -929,7 +948,8 @@ public class S3FileSystemProvider extends FileSystemProvider {
 
         if (type.equals(BasicFileAttributes.class)) {
             @SuppressWarnings("unchecked")
-            var a = (A) S3BasicFileAttributes.get(s3Path, Duration.ofMinutes(configuration.getTimeoutLow()));
+            var a = (A) S3BasicFileAttributes.get(s3Path,
+                Duration.ofMinutes(s3Path.getFileSystem().getConfiguration().getTimeoutLow()));
             return a;
         } else {
             throw new UnsupportedOperationException("cannot read attributes of type: " + type);
@@ -966,7 +986,8 @@ public class S3FileSystemProvider extends FileSystemProvider {
         }
 
         var attributesFilter = attributesFilterFor(attributes);
-        return S3BasicFileAttributes.get(s3Path, Duration.ofMinutes(configuration.getTimeoutLow())).asMap(attributesFilter);
+        return S3BasicFileAttributes.get(s3Path,
+            Duration.ofMinutes(s3Path.getFileSystem().getConfiguration().getTimeoutLow())).asMap(attributesFilter);
     }
 
     /**
@@ -978,19 +999,6 @@ public class S3FileSystemProvider extends FileSystemProvider {
     public void setAttribute(Path path, String attribute, Object value, LinkOption... options)
             throws UnsupportedOperationException {
         throw new UnsupportedOperationException("s3 file attributes cannot be modified by this class");
-    }
-
-    /**
-     * Set custom configuration. This configuration is referred to for API timeouts.
-     *
-     * @param configuration    The new configuration containing the timeout info
-     *
-     * @deprecated This method is deprecated and may be removed in future versions.
-     *
-     */
-    @Deprecated
-    public void setConfiguration(S3NioSpiConfiguration configuration) {
-        this.configuration = configuration;
     }
 
     /**
@@ -1044,12 +1052,11 @@ public class S3FileSystemProvider extends FileSystemProvider {
         // Evict the cache entry atomically so concurrent close() calls for the same instance are
         // idempotent (see https://github.com/awslabs/aws-java-nio-spi-for-s3/issues/773). This
         // method is invoked from S3FileSystem.close(), which already closes the channels and flips
-        // the open flag, so we must not close fs again here (that would recurse). The key is also
-        // removed from EXPLICITLY_CREATED so that a new file system may be created for the same URI
-        // after this one is closed (permitted, and provider-dependent, per the contract).
+        // the open flag, so we must not close fs again here (that would recurse). Removing the cache
+        // entry allows a new file system to be created for the same URI after this one is closed
+        // (permitted, and provider-dependent, per the contract).
         for (var key : FS_CACHE.keySet()) {
             if (FS_CACHE.remove(key, fs)) {
-                EXPLICITLY_CREATED.remove(key);
                 return;
             }
         }
@@ -1060,7 +1067,7 @@ public class S3FileSystemProvider extends FileSystemProvider {
     boolean exists(S3AsyncClient s3Client, S3Path path) throws InterruptedException, TimeoutException {
         try {
             s3Client.headObject(HeadObjectRequest.builder().bucket(path.bucketName()).key(path.getKey()).build())
-                .get(configuration.getTimeoutLow(), MINUTES);
+                .get(path.getFileSystem().getConfiguration().getTimeoutLow(), MINUTES);
             return true;
         } catch (NoSuchKeyException e) {
             return false;

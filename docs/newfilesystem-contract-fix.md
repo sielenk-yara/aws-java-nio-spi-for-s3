@@ -1,11 +1,18 @@
 # Fixing `newFileSystem` / `getFileSystem` Contract Compliance
 
-> **Status:** Implemented in `3.0.0-rc1` using **Option A** (separate registries). `newFileSystem`
-> gates `FileSystemAlreadyExistsException` on an in-JVM explicit-creation set, treats
-> `BucketAlreadyOwnedByYouException` as reuse, and maps `BucketAlreadyExistsException` to
-> `IOException`; `getFileSystem` throws `FileSystemNotFoundException` on a miss; `getPath` /
-> `Paths.get(URI)` materialize a lazy, side-effect-free view; and `close()` clears both registries.
-> Regression coverage is in `S3FileSystemProviderTest` and `NioContractComplianceTest`.
+> **Status:** Implemented in `3.0.0-rc1`, then **revised** during the configuration redesign
+> (issue #601). `newFileSystem` treats `BucketAlreadyOwnedByYouException` as reuse and maps
+> `BucketAlreadyExistsException` to `IOException`; `getFileSystem` throws
+> `FileSystemNotFoundException` on a miss; `getPath` / `Paths.get(URI)` materialize a lazy,
+> side-effect-free view; and `close()` removes the cache entry.
+>
+> **Revision (supersedes "Option A" below):** the separate `EXPLICITLY_CREATED` registry has been
+> removed. `newFileSystem` now throws `FileSystemAlreadyExistsException` when a file system for the
+> URI already exists in `FS_CACHE` — whether it was created by a previous `newFileSystem` call or
+> lazily materialized by `getPath` / `Paths.get`. This is simpler and more faithful to the
+> `java.nio.file.spi.FileSystemProvider` contract ("already exists" is about the in-JVM file-system
+> instance, not how it came to exist). Regression coverage is in `S3FileSystemProviderTest`
+> (`newFileSystemThrowsWhenViewAlreadyExists`) and `NioContractComplianceTest`.
 
 ## Background
 
