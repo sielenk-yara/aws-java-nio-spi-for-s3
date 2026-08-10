@@ -52,13 +52,15 @@ public class S3XFileSystemProviderTest {
     public void getFileSystem() {
         var provider = new S3XFileSystemProvider();
 
-        FileSystem fs2 = provider.getFileSystem(URI1);
+        // getFileSystem no longer lazily creates; a view is materialized via getPath and then
+        // returned by getFileSystem for any URI resolving to the same file-system key.
+        FileSystem fs2 = provider.getPath(URI1).getFileSystem();
         then(provider.getFileSystem(URI1)).isSameAs(fs2);
-        FileSystem fs3 = provider.getFileSystem(URI3);
+        FileSystem fs3 = provider.getPath(URI3).getFileSystem();
         then(fs3).isNotSameAs(fs2);
         then(provider.getFileSystem(URI2)).isSameAs(fs2);
-        then(provider.getFileSystem(URI7)).isNotSameAs(fs3);
-        then(provider.getFileSystem(URI8)).isNotSameAs(fs3);
+        then(provider.getPath(URI7).getFileSystem()).isNotSameAs(fs3);
+        then(provider.getPath(URI8).getFileSystem()).isNotSameAs(fs3);
         provider.closeFileSystem(fs2);
         provider.closeFileSystem(fs3);
     }
@@ -70,7 +72,7 @@ public class S3XFileSystemProviderTest {
         restoreSystemProperties(() -> {
             System.setProperty("aws.region", "us-west-1");
 
-            var fs = (S3FileSystem) p.getFileSystem(URI.create("s3x://urikey:urisecret@some.where.com:1010/bucket"));
+            var fs = (S3FileSystem) p.getPath(URI.create("s3x://urikey:urisecret@some.where.com:1010/bucket")).getFileSystem();
             fs.clientProvider().asyncClientBuilder(BUILDER);
             fs.client();
             fs.close();

@@ -148,7 +148,9 @@ java -Ds3.spi.client.custom-headers.enabled=true -jar your-application.jar
 **Method 2: Programmatic (Per FileSystem)**
 ```java
 S3FileSystemProvider provider = new S3FileSystemProvider();
-S3FileSystem fileSystem = (S3FileSystem) provider.getFileSystem(URI.create("s3://your-bucket"));
+// getPath materializes the file-system view on demand; getFileSystem(uri) throws
+// FileSystemNotFoundException if the file system has not been created yet.
+S3FileSystem fileSystem = (S3FileSystem) provider.getPath(URI.create("s3://your-bucket")).getFileSystem();
 fileSystem.clientProvider().setCustomHeadersEnabled(true);
 ```
 
@@ -481,9 +483,16 @@ to `/` must also be a directory. S3 holds no metadata that can be used to make t
 
 #### Working directory
 
-As directories don't exist and are only inferred there is no concept of being "in a directory". Therefore, the working
-directory is always the root and `/object` `./object` and `object` can be inferred to be the same file. In addition `../object`
-will also be the same file as you may not navigate above the root and no error will be produced if you attempt to.
+As directories don't exist and are only inferred there is no concept of being "in a directory". The working directory
+is always the root, so a relative path such as `object` refers to the same S3 object as the absolute path `/object`
+once it is resolved against the root. `../object` also refers to that object because you may not navigate above the
+root, and no error is produced if you attempt to.
+
+> **Behavior change in 3.0:** `S3Path.equals`, `hashCode` and `compareTo` now compare the *abstract* path, matching the
+> `java.nio.file.Path` contract. This means a relative path is **not** `equals()` to the corresponding absolute path
+> (e.g. `object` is no longer `equals()` to `/object`), and `.`/`..` are not eliminated during comparison. Use
+> `Files.isSameFile(a, b)` (or compare `toRealPath()`) to test whether two paths refer to the same object. See
+> [Breaking changes in 3.0](#breaking-changes-in-30).
 
 #### Relative path resolution
 
@@ -493,12 +502,17 @@ So if `some/path` was resolved relative to `/this/location/` then the resulting 
 Because directories are inferred, you may not resolve `some/path` relative to `/this/location` as the latter cannot be
 inferred to be a directory (it lacks a trailing `/`).
 
+The parent of an absolute path is always absolute (e.g. the parent of `/a/b/c` is `/a/b`), and `getParent()` returns
+`null` once the root is reached, so walking a path to its root terminates cleanly.
+
 #### Resolution of `..` and `.`
 
-The POSIX path special symbols `.` and `..` are treated as they would be in a normal POSIX path. Note that this could
-cause some S3 objects to be effectively invisible to this implementation. For example `s3://mybucket/foo/./baa` is
-an allowed S3 URI that is *not* equivalent to `s3://mybucket/foo/baa` even though this library will resolve the path `/foo/./baa`
-to `/foo/baa`.
+The POSIX path special symbols `.` and `..` are treated as they would be in a normal POSIX path. `normalize()` follows
+the `java.nio.file.Path` contract: a leading `..` in a *relative* path is preserved (its target is unknown), while a
+`..` at the root of an *absolute* path is dropped without making the path relative. Note that this could cause some S3
+objects to be effectively invisible to this implementation. For example `s3://mybucket/foo/./baa` is an allowed S3 URI
+that is *not* equivalent to `s3://mybucket/foo/baa` even though `normalize()` will reduce the path `/foo/./baa` to
+`/foo/baa`.
 
 ### S3 "URI" and Java `URI` incompatibility
 
@@ -509,20 +523,67 @@ and therefore must URL encode the URI. This results in a small incompatibility w
 by this library. Whenever possible avoiding the use of special characters in S3 filenames and paths is recommended. Otherwise
 cautious use of URL escapes will be needed.
 
-### `S3FileSystemProvider.deleteIfExists(path)` will always return true
+### `delete` follows the `Files.delete` contract
 
-The AWS S3 JDK `delete` operation doesn't return any indication of whether the file existed before deletion. Although
-we could test for file existence before deletion this would require an additional API call and would not be an atomic
-operation. Because S3 only guarantees read after write consistency it would be possible for a file to be created or 
-deleted between these two operations. Therefore, we currently always return `true`
+As of 3.0, `delete(path)` throws `NoSuchFileException` when the target does not exist and `DirectoryNotEmptyException`
+when the path is a non-empty directory, matching `java.nio.file.Files.delete`. Each `delete` therefore performs a small
+existence/emptiness check (a `HEAD` or a single-key `LIST`) before issuing the delete. To remove a directory together
+with all of its contents, either move it (see below) or walk it bottom-up (for example with a
+`Files.walkFileTree` deletion visitor).
 
-### Copies of a directory will also copy contents
+### Copies (and moves) of a directory will also copy contents
 
 Our implementation of `FileSystemProvider.copy` will also copy the content of the directory via batched copy operations. This is a variance
 from some other implementations such as `UnixFileSystemProvider` where directory contents are not copied and the
 use of the `walkFileTree` method is suggested to perform deep copies. In S3 this could result in an explosion
 of API calls which would be both expensive in time and possibly money. By performing batch copies we can greatly reduce
-the number of calls.
+the number of calls. `move` is implemented as a recursive copy followed by removal of the whole source subtree, and so
+shares this behavior. Because S3 has no atomic rename, `move` with `StandardCopyOption.ATOMIC_MOVE` throws
+`AtomicMoveNotSupportedException`.
+
+## Breaking changes in 3.0
+
+Release 3.0 tightens the provider's conformance to the `java.nio.file` contracts. The most visible changes are:
+
+- **`Path` equality is abstract.** `S3Path.equals`, `hashCode` and `compareTo` compare the abstract path (and bucket),
+  no longer normalizing via `toRealPath()`. A relative path is no longer `equals()` to the corresponding absolute path,
+  and `.`/`..` are not eliminated during comparison. Use `Files.isSameFile` to test whether two paths locate the same
+  object.
+- **`getParent()` stays absolute** and returns `null` at the root (previously it could return a relative path and then
+  throw while walking to the root).
+- **`normalize()`** preserves a leading `..` in relative paths and keeps absolute paths absolute.
+- **`relativize()`** now returns a correct, non-null relative path in all cases (including when `..` segments are
+  required).
+- **`iterator()`** no longer yields the root component as the first element.
+- **`delete()`** throws `NoSuchFileException` / `DirectoryNotEmptyException` instead of silently succeeding; it no longer
+  recursively deletes a non-empty directory. `deleteIfExists` behaves accordingly.
+- **`createDirectory()`** throws `FileAlreadyExistsException` if an object already exists at the key.
+- **`move()`** throws `AtomicMoveNotSupportedException` for `ATOMIC_MOVE`.
+- **`newDirectoryStream()`** throws `NotDirectoryException` when the path is a regular object, and `DirectoryStream`
+  now throws `IllegalStateException` if `iterator()` is called more than once.
+- **`getFileStore()` / `FileSystem.getFileStores()`** return a real, non-null `S3FileStore` (bucket-backed) instead of
+  `null` / an empty set.
+- **`readAttributes(path, "...")`** returns real attributes for directories (with `isDirectory == true`) instead of an
+  empty map.
+- **`checkAccess()`** throws `AccessDeniedException` for `EXECUTE` (S3 objects are never executable) and for `WRITE`
+  on a read-only file system, rather than only logging a warning.
+- **Channels:** `FileChannel.read(dst, position)` no longer moves the channel position; `SeekableByteChannel.truncate`
+  is supported on writable channels (and throws `NonWritableChannelException` on read-only channels); `DELETE_ON_CLOSE`
+  no longer leaves an object in S3.
+- **`newFileSystem` / `getFileSystem` / `getPath`:**
+  - `getFileSystem(uri)` now throws `FileSystemNotFoundException` when no file system has been created for that bucket
+    (previously it lazily created one). The headline `Paths.get(URI)` / `provider.getPath(URI)` ergonomics are
+    unchanged — they still materialize a file-system view on demand — so most code is unaffected. Code that relied on
+    `getFileSystem` to *create* a file system should call `getPath(uri).getFileSystem()` (or `newFileSystem`) instead.
+  - `newFileSystem(uri, env)` gates `FileSystemAlreadyExistsException` on whether *this JVM* already created a file
+    system for the URI, not on whether the S3 bucket exists. A pre-existing bucket that you own is now reused (fixes
+    [#770]); a second `newFileSystem` for the same bucket in the same JVM throws `FileSystemAlreadyExistsException`; a
+    bucket owned by another account yields `IOException` rather than `FileSystemAlreadyExistsException`.
+
+See [`docs/nio-contract-compliance-audit.md`](docs/nio-contract-compliance-audit.md) and
+[`docs/newfilesystem-contract-fix.md`](docs/newfilesystem-contract-fix.md) for the full analysis and rationale.
+
+[#770]: https://github.com/awslabs/aws-java-nio-spi-for-s3/pull/770
 
 ## Building this library
 

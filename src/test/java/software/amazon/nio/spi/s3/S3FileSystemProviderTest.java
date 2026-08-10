@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -30,11 +31,13 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.AccessMode;
+import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystemAlreadyExistsException;
 import java.nio.file.FileSystemNotFoundException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
@@ -45,6 +48,7 @@ import java.nio.file.attribute.FileAttributeView;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -71,6 +75,7 @@ import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
@@ -94,7 +99,7 @@ public class S3FileSystemProviderTest {
         provider = new S3FileSystemProvider();
         lenient().when(mockClient.headObject(anyConsumer())).thenReturn(
                 CompletableFuture.supplyAsync(() -> HeadObjectResponse.builder().contentLength(100L).build()));
-        fs = (S3FileSystem) provider.getFileSystem(URI.create(pathUri));
+        fs = (S3FileSystem) provider.getPath(URI.create(pathUri)).getFileSystem();
         fs.clientProvider(new FixedS3ClientProvider(mockClient));
     }
 
@@ -180,29 +185,31 @@ public class S3FileSystemProviderTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Bucket name cannot be null");
         //
-        // A filesystem for pathUri has been created already ;)
+        // A filesystem view for pathUri was materialized by getPath in init(), so getFileSystem
+        // returns that same instance.
         //
         assertSame(fs, provider.getFileSystem(URI.create(pathUri)));
 
         //
-        // New AWS S3 file system
+        // getFileSystem throws FileSystemNotFoundException for a bucket that has never had a file
+        // system created (neither via newFileSystem nor via getPath/Paths.get).
         //
-        var cfs = provider.getFileSystem(URI.create("s3://foo2/baa"));
-        var gfs = provider.getFileSystem(URI.create("s3://foo2"));
-        assertNotSame(fs, gfs); assertSame(cfs, gfs);
-        gfs = provider.getFileSystem(URI.create("s3://foo2"));
-        assertNotSame(fs, gfs); assertSame(cfs, gfs);
-        provider.closeFileSystem(cfs);
+        assertThatCode(() -> provider.getFileSystem(URI.create("s3://never-created")))
+                .isInstanceOf(FileSystemNotFoundException.class);
 
         //
-        // New AWS S3 file system with same bucket but different path
+        // Once a path is materialized via getPath, getFileSystem returns the same cached instance.
         //
-        cfs = provider.getFileSystem(URI.create("s3://foo3"));
-        gfs = provider.getFileSystem(URI.create("s3://foo3/dir"));
+        var cfs = provider.getPath(URI.create("s3://foo2/baa")).getFileSystem();
+        var gfs = provider.getFileSystem(URI.create("s3://foo2"));
         assertNotSame(fs, gfs); assertSame(cfs, gfs);
-        gfs = provider.getFileSystem(URI.create("s3://foo3/dir"));
+        gfs = provider.getFileSystem(URI.create("s3://foo2/other"));
         assertNotSame(fs, gfs); assertSame(cfs, gfs);
-        provider.closeFileSystem(cfs);
+        provider.closeFileSystem((S3FileSystem) cfs);
+
+        // After close the file system is gone again.
+        assertThatCode(() -> provider.getFileSystem(URI.create("s3://foo2")))
+                .isInstanceOf(FileSystemNotFoundException.class);
     }
 
     @Test
@@ -355,6 +362,9 @@ public class S3FileSystemProviderTest {
 
     @Test
     public void createDirectory() throws Exception {
+        // createDirectory first checks that nothing already exists at/under the prefix.
+        when(mockClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(CompletableFuture.supplyAsync(() ->
+                ListObjectsV2Response.builder().isTruncated(false).build()));
         when(mockClient.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class))).thenReturn(CompletableFuture.supplyAsync(() ->
                 PutObjectResponse.builder().build()));
 
@@ -364,6 +374,14 @@ public class S3FileSystemProviderTest {
         verify(mockClient, times(1)).putObject(argumentCaptor.capture(), any(AsyncRequestBody.class));
         assertEquals("foo", argumentCaptor.getValue().bucket());
         assertEquals("baa/baz/", argumentCaptor.getValue().key());
+    }
+
+    @Test
+    public void createDirectory_whenAlreadyExists_shouldThrow() {
+        when(mockClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(CompletableFuture.supplyAsync(() ->
+                ListObjectsV2Response.builder().contents(S3Object.builder().key("baa/baz/").build()).isTruncated(false).build()));
+
+        assertThrows(FileAlreadyExistsException.class, () -> provider.createDirectory(fs.getPath("/baa/baz/")));
     }
 
     @Test
@@ -382,10 +400,28 @@ public class S3FileSystemProviderTest {
 
     @Test
     public void delete() throws Exception {
-        var object1 = S3Object.builder().key("dir/key1").build();
-        var object2 = S3Object.builder().key("dir/subdir/key2").build();
+        // A single existing object is deleted (existence is checked via headObject).
+        when(mockClient.headObject(any(HeadObjectRequest.class))).thenReturn(CompletableFuture.supplyAsync(() ->
+                HeadObjectResponse.builder().contentLength(1L).build()));
+        when(mockClient.deleteObjects(any(DeleteObjectsRequest.class))).thenReturn(CompletableFuture.supplyAsync(() ->
+                DeleteObjectsResponse.builder().build()));
+
+        provider.delete(fs.getPath("/dir/key1"));
+
+        var argumentCaptor = ArgumentCaptor.forClass(DeleteObjectsRequest.class);
+        verify(mockClient, times(1)).deleteObjects(argumentCaptor.capture());
+        var captorValue = argumentCaptor.getValue();
+        assertEquals("foo", captorValue.bucket());
+        var keys = captorValue.delete().objects().stream().map(ObjectIdentifier::key).collect(Collectors.toList());
+        assertEquals(1, keys.size());
+        assertTrue(keys.contains("dir/key1"));
+    }
+
+    @Test
+    public void delete_emptyDirectory_deletesMarker() throws Exception {
+        // Only the directory marker object itself exists -> the directory is empty and is removed.
         when(mockClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(CompletableFuture.supplyAsync(() ->
-                ListObjectsV2Response.builder().contents(object1, object2).isTruncated(false).nextContinuationToken(null).build()));
+                ListObjectsV2Response.builder().contents(S3Object.builder().key("dir/").build()).isTruncated(false).build()));
         when(mockClient.deleteObjects(any(DeleteObjectsRequest.class))).thenReturn(CompletableFuture.supplyAsync(() ->
                 DeleteObjectsResponse.builder().build()));
 
@@ -393,12 +429,28 @@ public class S3FileSystemProviderTest {
 
         var argumentCaptor = ArgumentCaptor.forClass(DeleteObjectsRequest.class);
         verify(mockClient, times(1)).deleteObjects(argumentCaptor.capture());
-        var captorValue = argumentCaptor.getValue();
-        assertEquals("foo", captorValue.bucket());
-        var keys = captorValue.delete().objects().stream().map(ObjectIdentifier::key).collect(Collectors.toList());
-        assertEquals(2, keys.size());
-        assertTrue(keys.contains("dir/key1"));
-        assertTrue(keys.contains("dir/subdir/key2"));
+        var keys = argumentCaptor.getValue().delete().objects().stream().map(ObjectIdentifier::key).collect(Collectors.toList());
+        assertEquals(List.of("dir/"), keys);
+    }
+
+    @Test
+    public void delete_nonEmptyDirectory_shouldThrowDirectoryNotEmpty() {
+        var object1 = S3Object.builder().key("dir/key1").build();
+        var object2 = S3Object.builder().key("dir/subdir/key2").build();
+        when(mockClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(CompletableFuture.supplyAsync(() ->
+                ListObjectsV2Response.builder().contents(object1, object2).isTruncated(false).build()));
+
+        assertThrows(DirectoryNotEmptyException.class, () -> provider.delete(fs.getPath("/dir/")));
+        verify(mockClient, never()).deleteObjects(any(DeleteObjectsRequest.class));
+    }
+
+    @Test
+    public void delete_missingFile_shouldThrowNoSuchFile() {
+        when(mockClient.headObject(any(HeadObjectRequest.class))).thenReturn(CompletableFuture.failedFuture(
+                NoSuchKeyException.builder().build()));
+
+        assertThrows(NoSuchFileException.class, () -> provider.delete(fs.getPath("/dir/missing")));
+        verify(mockClient, never()).deleteObjects(any(DeleteObjectsRequest.class));
     }
 
     @Test
@@ -497,8 +549,11 @@ public class S3FileSystemProviderTest {
     @Test
     public void getFileStore() {
         var foo = fs.getPath("/foo");
-        //s3 doesn't have file stores
-        assertNull(provider.getFileStore(foo));
+        var store = provider.getFileStore(foo);
+        assertNotNull(store);
+        assertEquals("foo", store.name());
+        assertEquals("s3", store.type());
+        assertFalse(store.isReadOnly());
     }
 
     @Test
@@ -511,8 +566,15 @@ public class S3FileSystemProviderTest {
 
         var foo = fs.getPath("/foo");
         provider.checkAccess(foo, AccessMode.READ);
-        provider.checkAccess(foo, AccessMode.EXECUTE);
+        provider.checkAccess(foo, AccessMode.WRITE);
         provider.checkAccess(foo);
+    }
+
+    @Test
+    public void checkAccessExecute_shouldThrowAccessDenied() {
+        var foo = fs.getPath("/foo");
+        // S3 objects are never executable.
+        assertThrows(AccessDeniedException.class, () -> provider.checkAccess(foo, AccessMode.EXECUTE));
     }
 
     @Test
@@ -589,7 +651,13 @@ public class S3FileSystemProviderTest {
         assertEquals(FileTime.from(Instant.EPOCH), attributes.get("lastModifiedTime"));
         assertEquals(100L, attributes.get("size"));
 
-        assertEquals(Collections.emptyMap(), provider.readAttributes(fooDir, "*"));
+        // A directory now reports real attributes (isDirectory == true) rather than an empty map.
+        var dirAttributes = provider.readAttributes(fooDir, "*");
+        assertFalse(dirAttributes.isEmpty());
+        assertEquals(Boolean.TRUE, dirAttributes.get("isDirectory"));
+
+        // An empty attribute string still yields an empty map.
+        assertEquals(Collections.emptyMap(), provider.readAttributes(foo, ""));
     }
 
     @Test
