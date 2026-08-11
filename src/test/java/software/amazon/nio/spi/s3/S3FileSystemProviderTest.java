@@ -118,8 +118,10 @@ public class S3FileSystemProviderTest {
     @Test
     @DisplayName("newFileSystem(Path, env) should throw")
     public void newFileSystemPath() {
+        Path path = Paths.get("/foo/baa");
+
         assertThatThrownBy(
-            () -> new S3FileSystemProvider().newFileSystem(Paths.get(pathUri), Collections.emptyMap())
+            () -> new S3FileSystemProvider().newFileSystem(path, Collections.emptyMap())
         ).isInstanceOf(UnsupportedOperationException.class);
     }
 
